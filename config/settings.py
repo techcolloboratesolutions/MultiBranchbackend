@@ -67,21 +67,36 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
+# DATABASES = {
+#     "default": {
+#         "ENGINE": "django.db.backends.postgresql",
+#         "NAME": env("DB_NAME"),
+#         "USER": env("DB_USER"),
+#         "PASSWORD": env("DB_PASSWORD"),
+#         "HOST": env("DB_HOST"),
+#         "PORT": env("DB_PORT", default="5432"),
+#         "ATOMIC_REQUESTS": False,
+#         "CONN_MAX_AGE": 60,
+#         "OPTIONS": {
+#             "connect_timeout": 10,
+#         },
+#     }
+# }
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": env("DB_NAME"),
-        "USER": env("DB_USER"),
-        "PASSWORD": env("DB_PASSWORD"),
-        "HOST": env("DB_HOST"),
-        "PORT": env("DB_PORT", default="5432"),
-        "ATOMIC_REQUESTS": False,
-        "CONN_MAX_AGE": 60,
-        "OPTIONS": {
-            "connect_timeout": 10,
-        },
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'postgres',
+        'USER': 'postgres.wozkhxrdaecpuhgccyfq',
+        'PASSWORD': 'Techy321#@!',
+        'HOST': 'aws-0-ap-northeast-2.pooler.supabase.com',      # Use 'localhost' or your database IP address
+        'PORT': '5432',           # 5432 is the default PostgreSQL port
+        #  'OPTIONS': {
+        #     'sslmode': 'verify-full', 
+        #      },
     }
 }
+
+
 
 AUTH_USER_MODEL = "accounts.User"
 
