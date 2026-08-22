@@ -16,7 +16,7 @@ def current_env_name() -> str:
     return "local"
 
 
-def get_databases(env):
+def get_databases():
     if "test" in sys.argv:
         return {
             "default": {
@@ -26,4 +26,4 @@ def get_databases(env):
         }
 
     builder = deploy_database if current_env_name() == "production" else local_database
-    return {"default": builder(env)}
+    return {"default": builder()}

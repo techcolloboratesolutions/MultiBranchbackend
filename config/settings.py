@@ -1,33 +1,20 @@
 from datetime import timedelta
 from pathlib import Path
 
-import environ
-
 from config.db_connections import current_env_name, get_databases
+from config.env import env, env_bool, env_list, load_env_file
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-env = environ.Env(
-    DEBUG=(bool, False),
-    ALLOWED_HOSTS=(list, [".vercel.app", "localhost", "127.0.0.1"]),
-)
-
-
-def _read_env_file(path: Path) -> None:
-    if path.is_file():
-        environ.Env.read_env(path)
-
-
-# Environment-specific DB file first, then shared .env for SECRET_KEY / CORS.
 if current_env_name() == "production":
-    _read_env_file(BASE_DIR / ".env.deploy")
+    load_env_file(BASE_DIR / ".env.deploy")
 else:
-    _read_env_file(BASE_DIR / ".env.local")
-_read_env_file(BASE_DIR / ".env")
+    load_env_file(BASE_DIR / ".env.local")
+load_env_file(BASE_DIR / ".env")
 
-SECRET_KEY = env("SECRET_KEY", default="django-insecure-set-SECRET_KEY-on-vercel")
-DEBUG = env("DEBUG")
-ALLOWED_HOSTS = env("ALLOWED_HOSTS")
+SECRET_KEY = env("SECRET_KEY", "django-insecure-set-SECRET_KEY-on-vercel")
+DEBUG = env_bool("DEBUG", False)
+ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", [".vercel.app", "localhost", "127.0.0.1"])
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -80,7 +67,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
 DJANGO_ENV = current_env_name()
-DATABASES = get_databases(env)
+DATABASES = get_databases()
 
 AUTH_USER_MODEL = "accounts.User"
 
@@ -101,15 +88,15 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
+CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS")
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://.*\.vercel\.app$",
 ]
 CORS_ALLOW_CREDENTIALS = True
 
-CSRF_TRUSTED_ORIGINS = env.list(
+CSRF_TRUSTED_ORIGINS = env_list(
     "CSRF_TRUSTED_ORIGINS",
-    default=["https://multi-branchbackend.vercel.app"],
+    ["https://multi-branchbackend.vercel.app"],
 )
 
 REST_FRAMEWORK = {
