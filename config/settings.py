@@ -8,12 +8,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 env = environ.Env(
     DEBUG=(bool, False),
-    ALLOWED_HOSTS=(list, ["localhost", "127.0.0.1"]),
+    ALLOWED_HOSTS=(list, [".vercel.app", "localhost", "127.0.0.1"]),
 )
 
 environ.Env.read_env(BASE_DIR / ".env")
 
-SECRET_KEY = env("SECRET_KEY")
+SECRET_KEY = env("SECRET_KEY", default="django-insecure-set-SECRET_KEY-on-vercel")
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 
@@ -67,36 +67,23 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
-# DATABASES = {
-#     "default": {
-#         "ENGINE": "django.db.backends.postgresql",
-#         "NAME": env("DB_NAME"),
-#         "USER": env("DB_USER"),
-#         "PASSWORD": env("DB_PASSWORD"),
-#         "HOST": env("DB_HOST"),
-#         "PORT": env("DB_PORT", default="5432"),
-#         "ATOMIC_REQUESTS": False,
-#         "CONN_MAX_AGE": 60,
-#         "OPTIONS": {
-#             "connect_timeout": 10,
-#         },
-#     }
-# }
+# Supabase Postgres. On Vercel (serverless) use the transaction pooler:
+# host: aws-0-....pooler.supabase.com  port: 6543
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'postgres',
-        'USER': 'postgres.wozkhxrdaecpuhgccyfq',
-        'PASSWORD': 'Techy321#@!',
-        'HOST': 'aws-0-ap-northeast-2.pooler.supabase.com',      # Use 'localhost' or your database IP address
-        'PORT': '5432',           # 5432 is the default PostgreSQL port
-        #  'OPTIONS': {
-        #     'sslmode': 'verify-full', 
-        #      },
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": env("DB_NAME", default="postgres"),
+        "USER": env("DB_USER", default=""),
+        "PASSWORD": env("DB_PASSWORD", default=""),
+        "HOST": env("DB_HOST", default=""),
+        "PORT": env("DB_PORT", default="6543"),
+        "CONN_MAX_AGE": 0,
+        "DISABLE_SERVER_SIDE_CURSORS": True,
+        "OPTIONS": {
+            "sslmode": "require",
+        },
     }
 }
-
-
 
 AUTH_USER_MODEL = "accounts.User"
 
@@ -118,6 +105,15 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.vercel\.app$",
+]
+CORS_ALLOW_CREDENTIALS = True
+
+CSRF_TRUSTED_ORIGINS = env.list(
+    "CSRF_TRUSTED_ORIGINS",
+    default=["https://multi-branchbackend.vercel.app"],
+)
 
 if "test" in sys.argv:
     DATABASES["default"] = {
@@ -137,7 +133,6 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "core.exceptions.api_exception_handler",
 }
 
-# JWT views are wired in Phase 2. Lifetimes are defined here so settings stay in one place.
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
