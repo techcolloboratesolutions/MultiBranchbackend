@@ -24,7 +24,6 @@ def current_env_name() -> str:
 
 
 def get_databases():
-    # Build-time only. Lambda argv is empty or the handler path — never SQLite there.
     if _is_vercel_build_probe():
         return dict(_MEMORY_SQLITE)
 

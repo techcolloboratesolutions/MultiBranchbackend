@@ -77,5 +77,7 @@ def _postgres(*, name, user, password, host, port, sslmode):
         "DISABLE_SERVER_SIDE_CURSORS": True,
         "OPTIONS": {
             "sslmode": sslmode or "require",
+            "connect_timeout": 8,
+            "gssencmode": "disable",
         },
     }

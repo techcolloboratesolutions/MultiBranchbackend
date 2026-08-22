@@ -1,14 +1,17 @@
+from django.conf import settings
 from django.contrib import admin
-from django.db import connection
 from django.http import JsonResponse
 from django.urls import include, path
 
+
 def health(_request):
+    db = settings.DATABASES.get("default", {})
+    engine = str(db.get("ENGINE") or "").rsplit(".", 1)[-1]
     return JsonResponse(
         {
             "status": "ok",
-            "database": connection.vendor,
-            "db_host": connection.settings_dict.get("HOST") or "",
+            "database": engine,
+            "db_host": db.get("HOST") or "",
         }
     )
 
