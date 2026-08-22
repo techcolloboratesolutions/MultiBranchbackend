@@ -1,10 +1,16 @@
 from django.contrib import admin
+from django.db import connection
 from django.http import JsonResponse
 from django.urls import include, path
 
-
 def health(_request):
-    return JsonResponse({"status": "ok"})
+    return JsonResponse(
+        {
+            "status": "ok",
+            "database": connection.vendor,
+            "db_host": connection.settings_dict.get("HOST") or "",
+        }
+    )
 
 
 urlpatterns = [

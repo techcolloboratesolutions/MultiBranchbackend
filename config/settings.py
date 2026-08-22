@@ -73,17 +73,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Setting both makes Vercel prefer ASGI and crash if the rewrite targets a WSGI file.
 
 DJANGO_ENV = current_env_name()
-# Vercel’s settings probe runs `python -c` then sets sys.argv to ["manage.py"]
-# with no subcommand. That import must not touch Postgres.
-try:
-    DATABASES = get_databases()
-except Exception:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": ":memory:",
-        }
-    }
+DATABASES = get_databases()
 
 SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

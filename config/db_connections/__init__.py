@@ -24,24 +24,17 @@ def current_env_name() -> str:
 
 
 def get_databases():
-    if _skip_live_postgres():
+    # Build-time only. Lambda argv is empty or the handler path — never SQLite there.
+    if _is_vercel_build_probe():
         return dict(_MEMORY_SQLITE)
 
     builder = deploy_database if current_env_name() == "production" else local_database
-    try:
-        return {"default": builder()}
-    except Exception:
-        if _skip_live_postgres():
-            return dict(_MEMORY_SQLITE)
-        raise
+    return {"default": builder()}
 
 
-def _skip_live_postgres() -> bool:
+def _is_vercel_build_probe() -> bool:
     argv = sys.argv
-    if "test" in argv or "collectstatic" in argv:
+    if "collectstatic" in argv or "test" in argv:
         return True
-    # Vercel vc_django_settings.py: sys.argv = ["manage.py"] then import settings.
-    if argv == ["manage.py"]:
-        return True
-    argv0 = argv[0] if argv else ""
-    return argv0 in {"-c", "-", ""}
+    # packages/python/templates/vc_django_settings.py sets this, then imports settings.
+    return argv == ["manage.py"]
