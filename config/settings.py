@@ -14,7 +14,12 @@ load_env_file(BASE_DIR / ".env")
 
 SECRET_KEY = env("SECRET_KEY", "django-insecure-set-SECRET_KEY-on-vercel")
 DEBUG = env_bool("DEBUG", False)
-ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", ["multi-branchbackend.vercel.app", "localhost", "127.0.0.1"])
+ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", [".vercel.app", "localhost", "127.0.0.1"])
+# Preview URLs are host-hash-team.vercel.app; Vercel env often lists only the production host.
+if env("VERCEL"):
+    for host in (".vercel.app", env("VERCEL_URL"), env("VERCEL_PROJECT_PRODUCTION_URL")):
+        if host and host not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(host)
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -101,8 +106,10 @@ CORS_ALLOW_CREDENTIALS = True
 
 CSRF_TRUSTED_ORIGINS = env_list(
     "CSRF_TRUSTED_ORIGINS",
-    ["https://multi-branchbackend.vercel.app"],
+    ["https://*.vercel.app", "https://multi-branchbackend.vercel.app"],
 )
+if env("VERCEL") and "https://*.vercel.app" not in CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS.append("https://*.vercel.app")
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
