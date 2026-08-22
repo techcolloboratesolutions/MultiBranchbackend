@@ -3,8 +3,6 @@
 import os
 import sys
 
-from django.core.exceptions import ImproperlyConfigured
-
 from .deploy import database_config as deploy_database
 from .local import database_config as local_database
 
@@ -32,21 +30,18 @@ def get_databases():
     builder = deploy_database if current_env_name() == "production" else local_database
     try:
         return {"default": builder()}
-    except ImproperlyConfigured:
-        # Build-time settings discovery has no (or incomplete) DB env.
-        if (
-            _is_settings_probe()
-            or _skip_live_postgres()
-            or (os.environ.get("VERCEL") and not os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
-        ):
+    except Exception:
+        if _skip_live_postgres():
             return dict(_MEMORY_SQLITE)
         raise
 
 
 def _skip_live_postgres() -> bool:
-    return "test" in sys.argv or "collectstatic" in sys.argv
-
-
-def _is_settings_probe() -> bool:
-    argv0 = sys.argv[0] if sys.argv else ""
-    return argv0 in {"-c", "-", ""} or "<string>" in argv0
+    argv = sys.argv
+    if "test" in argv or "collectstatic" in argv:
+        return True
+    # Vercel vc_django_settings.py: sys.argv = ["manage.py"] then import settings.
+    if argv == ["manage.py"]:
+        return True
+    argv0 = argv[0] if argv else ""
+    return argv0 in {"-c", "-", ""}
