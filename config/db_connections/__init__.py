@@ -17,7 +17,8 @@ def current_env_name() -> str:
 
 
 def get_databases():
-    if "test" in sys.argv:
+    # Tests and Vercel collectstatic must not require live Postgres.
+    if "test" in sys.argv or "collectstatic" in sys.argv:
         return {
             "default": {
                 "ENGINE": "django.db.backends.sqlite3",

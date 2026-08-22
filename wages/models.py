@@ -51,7 +51,7 @@ class BusinessWage(AuditMixin):
                 name="uniq_wage_institution_partner_period",
             ),
             models.CheckConstraint(
-                check=models.Q(wages_month__gte=1) & models.Q(wages_month__lte=12),
+                condition=models.Q(wages_month__gte=1) & models.Q(wages_month__lte=12),
                 name="chk_wages_month_range",
             ),
         ]
