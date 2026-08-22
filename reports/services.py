@@ -5,6 +5,7 @@ from decimal import Decimal
 from django.db.models import Sum
 
 from core.money import calculate_total_business, money
+from institutions.models import Institution
 from payments.models import DailyPayment, PaymentHead
 from receipts.models import DailyReceipt, ReceiptHead
 
@@ -158,8 +159,94 @@ def monthly_head_matrix(institution_id, year: int, month: int):
     }
 
 
+def institution_date_head_matrix(day: date):
+    """Receipt and payment heads for every active branch on one business date."""
+    receipt_heads = list(ReceiptHead.objects.filter(is_active=True).order_by("code"))
+    payment_heads = list(PaymentHead.objects.filter(is_active=True).order_by("code"))
+    rec_qs = DailyReceipt.objects.filter(
+        is_active=True,
+        business_date=day,
+        receipt_head__is_active=True,
+    )
+    pay_qs = DailyPayment.objects.filter(
+        is_active=True,
+        business_date=day,
+        payment_head__is_active=True,
+    )
+    rec_map = {
+        (row["institution_id"], row["receipt_head_id"]): money(row["total"] or ZERO)
+        for row in rec_qs.values("institution_id", "receipt_head_id").annotate(total=Sum("amount"))
+    }
+    pay_map = {
+        (row["institution_id"], row["payment_head_id"]): money(row["total"] or ZERO)
+        for row in pay_qs.values("institution_id", "payment_head_id").annotate(total=Sum("amount"))
+    }
+    rec_totals = {head.id: ZERO for head in receipt_heads}
+    pay_totals = {head.id: ZERO for head in payment_heads}
+    rows = []
+    for inst in Institution.objects.filter(is_active=True).order_by("name"):
+        receipts = {}
+        rec_total = ZERO
+        for head in receipt_heads:
+            amount = rec_map.get((inst.id, head.id), ZERO)
+            receipts[str(head.id)] = amount
+            rec_total += amount
+            rec_totals[head.id] += amount
+        payments = {}
+        pay_total = ZERO
+        for head in payment_heads:
+            amount = pay_map.get((inst.id, head.id), ZERO)
+            payments[str(head.id)] = amount
+            pay_total += amount
+            pay_totals[head.id] += amount
+        rows.append(
+            {
+                "institution_id": inst.id,
+                "institution_name": inst.name,
+                "receipts": receipts,
+                "payments": payments,
+                "receipt": money(rec_total),
+                "payment": money(pay_total),
+                "business": calculate_total_business(rec_total, pay_total),
+            }
+        )
+    return {
+        "date": day,
+        "receipt_heads": receipt_heads,
+        "payment_heads": payment_heads,
+        "rows": rows,
+        "receipt_head_totals": rec_totals,
+        "payment_head_totals": pay_totals,
+        "totals": {
+            "total_receipt": money(sum(rec_totals.values(), ZERO)),
+            "total_payment": money(sum(pay_totals.values(), ZERO)),
+            "total_business": calculate_total_business(
+                sum(rec_totals.values(), ZERO),
+                sum(pay_totals.values(), ZERO),
+            ),
+        },
+    }
+
+
 def institution_business(year: int, month: int):
     start, end = _date_range(year, month)
+    return institution_period_totals(start, end)
+
+
+def institution_day_totals(day: date):
+    return institution_period_totals(day, day)
+
+
+def institution_period_totals(start: date, end: date):
+    data = {
+        inst.id: {
+            "institution_id": inst.id,
+            "institution_name": inst.name,
+            "receipt": ZERO,
+            "payment": ZERO,
+        }
+        for inst in Institution.objects.filter(is_active=True).order_by("name")
+    }
     receipts = (
         DailyReceipt.objects.filter(is_active=True, business_date__range=(start, end))
         .values("institution_id", "institution__name")
@@ -170,14 +257,17 @@ def institution_business(year: int, month: int):
         .values("institution_id", "institution__name")
         .annotate(total=Sum("amount"))
     )
-    data = {}
     for row in receipts:
-        data[row["institution_id"]] = {
-            "institution_id": row["institution_id"],
-            "institution_name": row["institution__name"],
-            "receipt": money(row["total"] or ZERO),
-            "payment": ZERO,
-        }
+        entry = data.setdefault(
+            row["institution_id"],
+            {
+                "institution_id": row["institution_id"],
+                "institution_name": row["institution__name"],
+                "receipt": ZERO,
+                "payment": ZERO,
+            },
+        )
+        entry["receipt"] = money(row["total"] or ZERO)
     for row in payments:
         entry = data.setdefault(
             row["institution_id"],

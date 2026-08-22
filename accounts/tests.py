@@ -71,6 +71,13 @@ class AuthApiTests(TestCase):
         ids = [row["id"] for row in response.data["results"]]
         self.assertEqual(ids, [self.inst1.id])
 
+    def test_lookup_user_returns_institutions(self):
+        response = self.client.get("/api/auth/lookup/", {"username": "manager01"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["institution"]["name"], "Branch 1")
+        self.assertEqual(response.data["main_institution"]["name"], "Horizon Group")
+        self.assertEqual(response.data["role"], "MANAGER")
+
     def test_manager_cannot_access_other_institution_receipts(self):
         self.client.force_authenticate(self.manager)
         response = self.client.get(f"/api/receipts/?institution_id={self.inst2.id}")

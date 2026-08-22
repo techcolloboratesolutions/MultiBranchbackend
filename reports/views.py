@@ -6,11 +6,15 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.permissions import IsAdminOrManager
+from datetime import date as date_type
+
+from accounts.permissions import IsAdminOrManager, IsAdminRole
 from accounts.scoping import scoped_institution_id
 from reports.services import (
     daily_breakdown,
     institution_business,
+    institution_date_head_matrix,
+    institution_day_totals,
     monthly_head_matrix,
     monthly_trend,
     period_totals,
@@ -120,6 +124,55 @@ class MonthlyReportExportView(APIView):
         return response
 
 
+class DayByInstitutionReportView(APIView):
+    permission_classes = [IsAdminRole]
+
+    def get(self, request):
+        raw = (request.query_params.get("date") or "").strip()
+        if not raw:
+            return Response({"detail": "date is required (YYYY-MM-DD)."}, status=400)
+        try:
+            day = date_type.fromisoformat(raw)
+        except ValueError:
+            return Response({"detail": "Invalid date."}, status=400)
+        matrix = institution_date_head_matrix(day)
+        totals = matrix["totals"]
+        return Response(
+            {
+                "date": day.isoformat(),
+                "receipt_heads": [
+                    {"id": head.id, "code": head.code, "description": head.description}
+                    for head in matrix["receipt_heads"]
+                ],
+                "payment_heads": [
+                    {"id": head.id, "code": head.code, "description": head.description}
+                    for head in matrix["payment_heads"]
+                ],
+                "rows": [
+                    {
+                        "institution_id": row["institution_id"],
+                        "institution_name": row["institution_name"],
+                        "receipts": {key: str(value) for key, value in row["receipts"].items()},
+                        "payments": {key: str(value) for key, value in row["payments"].items()},
+                        "receipt": str(row["receipt"]),
+                        "payment": str(row["payment"]),
+                        "business": str(row["business"]),
+                    }
+                    for row in matrix["rows"]
+                ],
+                "receipt_head_totals": {
+                    str(head_id): str(amount) for head_id, amount in matrix["receipt_head_totals"].items()
+                },
+                "payment_head_totals": {
+                    str(head_id): str(amount) for head_id, amount in matrix["payment_head_totals"].items()
+                },
+                "total_receipt": str(totals["total_receipt"]),
+                "total_payment": str(totals["total_payment"]),
+                "total_business": str(totals["total_business"]),
+            }
+        )
+
+
 class DashboardView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -133,11 +186,16 @@ class DashboardView(APIView):
         rows, _ = daily_breakdown(institution_id, today.year, today.month)
         trend = monthly_trend(institution_id, today, months=12)
 
+        scope_name = user.institution.name
+        if user.is_admin_role and institution_id is None:
+            scope_name = "ALL branches"
+
         payload = {
             "role": user.role_code,
+            "scope": "all" if institution_id is None else "institution",
             "institution": {
-                "id": user.institution_id,
-                "name": user.institution.name,
+                "id": institution_id or user.institution_id,
+                "name": scope_name,
             },
             "today": {
                 "receipt": str(today_receipt),
@@ -177,12 +235,23 @@ class DashboardView(APIView):
             payload["institutions_active"] = Institution.objects.filter(is_active=True).count()
             payload["institution_series"] = [
                 {
+                    "id": row["institution_id"],
                     "name": row["institution_name"],
                     "business": float(row["business"]),
                     "receipt": float(row["receipt"]),
                     "payment": float(row["payment"]),
                 }
                 for row in institution_business(today.year, today.month)
+            ]
+            payload["institution_today"] = [
+                {
+                    "id": row["institution_id"],
+                    "name": row["institution_name"],
+                    "business": float(row["business"]),
+                    "receipt": float(row["receipt"]),
+                    "payment": float(row["payment"]),
+                }
+                for row in institution_day_totals(today)
             ]
 
         return Response(payload)
