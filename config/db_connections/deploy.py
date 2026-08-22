@@ -12,7 +12,7 @@ def database_config():
     if from_url:
         return from_url
 
-    host = env("DB_HOST").strip()
+    host = _first_env("DB_HOST", "POSTGRES_HOST", "PGHOST")
     if not host:
         raise ImproperlyConfigured(
             "DB_HOST is empty, so Postgres tried a Unix socket instead of Supabase. "
@@ -22,13 +22,21 @@ def database_config():
         )
 
     return _postgres(
-        name=env("DB_NAME", "postgres"),
-        user=env("DB_USER"),
-        password=env("DB_PASSWORD"),
+        name=_first_env("DB_NAME", "POSTGRES_DATABASE", "PGDATABASE") or "postgres",
+        user=_first_env("DB_USER", "POSTGRES_USER", "PGUSER"),
+        password=_first_env("DB_PASSWORD", "POSTGRES_PASSWORD", "PGPASSWORD"),
         host=host,
-        port=env("DB_PORT", "6543"),
-        sslmode=env("DB_SSLMODE", "require"),
+        port=_first_env("DB_PORT", "POSTGRES_PORT", "PGPORT") or "6543",
+        sslmode=_first_env("DB_SSLMODE") or "require",
     )
+
+
+def _first_env(*keys: str) -> str:
+    for key in keys:
+        value = env(key).strip()
+        if value:
+            return value
+    return ""
 
 
 def _from_database_url():
@@ -62,6 +70,12 @@ def _from_database_url():
 
 
 def _postgres(*, name, user, password, host, port, sslmode):
+    name = str(name or "postgres").strip()
+    user = str(user or "").strip()
+    password = str(password or "").strip()
+    host = str(host or "").strip()
+    port = str(port or "6543").strip()
+    sslmode = str(sslmode or "require").strip().lower()
     if not user or not password:
         raise ImproperlyConfigured(
             "Supabase user and password are required (DB_USER / DB_PASSWORD or DATABASE_URL)."

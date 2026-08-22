@@ -21,7 +21,10 @@ def load_env_file(path: Path) -> None:
 
 
 def env(key: str, default: str = "") -> str:
-    return os.environ.get(key, default)
+    value = os.environ.get(key)
+    if value is None:
+        return default
+    return value.strip().strip("'").strip('"')
 
 
 def env_required(*keys: str) -> None:
