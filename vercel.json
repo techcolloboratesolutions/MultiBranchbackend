@@ -1,14 +1,12 @@
 {
-  "builds": [
-    {
-      "src": "api/index.py",
-      "use": "@vercel/python"
-    }
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/index.py" }
   ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "api/index.py"
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 30,
+      "includeFiles": "{api,config,accounts,core,institutions,receipts,payments,partners,wages,reports}/**",
+      "excludeFiles": "{.venv,.git,**/__pycache__}/**"
     }
-  ]
+  }
 }
