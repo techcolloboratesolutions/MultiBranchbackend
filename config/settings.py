@@ -1,8 +1,9 @@
 from datetime import timedelta
 from pathlib import Path
-import sys
 
 import environ
+
+from config.db_connections import current_env_name, get_databases
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -11,7 +12,18 @@ env = environ.Env(
     ALLOWED_HOSTS=(list, [".vercel.app", "localhost", "127.0.0.1"]),
 )
 
-environ.Env.read_env(BASE_DIR / ".env")
+
+def _read_env_file(path: Path) -> None:
+    if path.is_file():
+        environ.Env.read_env(path)
+
+
+# Environment-specific DB file first, then shared .env for SECRET_KEY / CORS.
+if current_env_name() == "production":
+    _read_env_file(BASE_DIR / ".env.deploy")
+else:
+    _read_env_file(BASE_DIR / ".env.local")
+_read_env_file(BASE_DIR / ".env")
 
 SECRET_KEY = env("SECRET_KEY", default="django-insecure-set-SECRET_KEY-on-vercel")
 DEBUG = env("DEBUG")
@@ -67,23 +79,8 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
-# Supabase Postgres. On Vercel (serverless) use the transaction pooler:
-# host: aws-0-....pooler.supabase.com  port: 6543
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": env("DB_NAME", default="postgres"),
-        "USER": env("DB_USER", default=""),
-        "PASSWORD": env("DB_PASSWORD", default=""),
-        "HOST": env("DB_HOST", default=""),
-        "PORT": env("DB_PORT", default="6543"),
-        "CONN_MAX_AGE": 0,
-        "DISABLE_SERVER_SIDE_CURSORS": True,
-        "OPTIONS": {
-            "sslmode": "require",
-        },
-    }
-}
+DJANGO_ENV = current_env_name()
+DATABASES = get_databases(env)
 
 AUTH_USER_MODEL = "accounts.User"
 
@@ -114,12 +111,6 @@ CSRF_TRUSTED_ORIGINS = env.list(
     "CSRF_TRUSTED_ORIGINS",
     default=["https://multi-branchbackend.vercel.app"],
 )
-
-if "test" in sys.argv:
-    DATABASES["default"] = {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": ":memory:",
-    }
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (

@@ -10,16 +10,19 @@ Vercel is serverless. Django can run, but you must set env vars and use the **tr
 
 ## 2. Environment variables (Vercel → Settings → Environment Variables)
 
+Copy names from `.env.deploy.example`. Also set:
+
 ```
+DJANGO_ENV=production
 SECRET_KEY=<long random string>
 DEBUG=False
-ALLOWED_HOSTS=.vercel.app,localhost
-
+ALLOWED_HOSTS=.vercel.app
 DB_NAME=postgres
 DB_USER=postgres.wozkhxrdaecpuhgccyfq
 DB_PASSWORD=<Supabase database password>
 DB_HOST=aws-0-ap-northeast-2.pooler.supabase.com
 DB_PORT=6543
+DB_SSLMODE=require
 ```
 
 In Supabase: **Project Settings → Database → Connection string → Transaction pooler** (port **6543**).  
