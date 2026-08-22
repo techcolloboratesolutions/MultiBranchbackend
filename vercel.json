@@ -1,12 +1,8 @@
 {
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index.py" }
-  ],
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/index.py": {
-      "maxDuration": 30,
-      "includeFiles": "{api,config,accounts,core,institutions,receipts,payments,partners,wages,reports}/**",
-      "excludeFiles": "{.venv,.git,**/__pycache__}/**"
+    "config/wsgi.py": {
+      "maxDuration": 30
     }
   }
 }

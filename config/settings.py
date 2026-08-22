@@ -64,10 +64,15 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "config.wsgi.application"
-ASGI_APPLICATION = "config.asgi.application"
+# Leave ASGI unset so Vercel uses WSGI (JWT API does not need ASGI).
+# Setting both makes Vercel prefer ASGI and crash if the rewrite targets a WSGI file.
 
 DJANGO_ENV = current_env_name()
 DATABASES = get_databases()
+
+SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
 
 AUTH_USER_MODEL = "accounts.User"
 

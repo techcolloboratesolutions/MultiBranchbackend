@@ -24,6 +24,20 @@ def env(key: str, default: str = "") -> str:
     return os.environ.get(key, default)
 
 
+def env_required(*keys: str) -> None:
+    missing = [key for key in keys if not os.environ.get(key, "").strip()]
+    if not missing:
+        return
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured(
+        "These database variables are not defined: "
+        + ", ".join(f"{key}" for key in missing)
+        + ". For local: backend/.env.local (DB_NAME=multibranches). "
+        "For production: backend/.env.deploy (DB_NAME=postgres) or the same names on Vercel."
+    )
+
+
 def env_bool(key: str, default: bool = False) -> bool:
     value = os.environ.get(key)
     if value is None:
