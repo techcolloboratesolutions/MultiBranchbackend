@@ -14,7 +14,7 @@ load_env_file(BASE_DIR / ".env")
 
 SECRET_KEY = env("SECRET_KEY", "django-insecure-set-SECRET_KEY-on-vercel")
 DEBUG = env_bool("DEBUG", False)
-ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", [".vercel.app", "localhost", "127.0.0.1"])
+ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", ["multi-branchbackend.vercel.app", "localhost", "127.0.0.1"])
 
 INSTALLED_APPS = [
     "django.contrib.admin",
