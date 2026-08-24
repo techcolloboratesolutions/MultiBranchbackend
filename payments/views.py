@@ -12,6 +12,38 @@ from institutions.models import Institution
 from payments.models import DailyPayment, PaymentHead
 from payments.serializers import DailyPaymentSerializer, PaymentHeadSerializer
 
+VALID_RECURRING_TYPES = {choice.value for choice in PaymentHead.RecurringType}
+
+
+def parse_recurring_types(request, *, default=(PaymentHead.RecurringType.DAILY,)):
+    """Daily is selected by default; Monthly is included when requested."""
+    raw_values = request.query_params.getlist("recurring_type")
+    selected = []
+    for raw in raw_values:
+        for part in str(raw).split(","):
+            value = part.strip()
+            matched = next(
+                (valid for valid in VALID_RECURRING_TYPES if valid.lower() == value.lower()),
+                None,
+            )
+            if matched and matched not in selected:
+                selected.append(matched)
+    return selected or list(default)
+
+
+def payment_entry_row(head, payment):
+    return {
+        "payment_head": head.id,
+        "code": head.code,
+        "description": head.description,
+        "recurring_type": head.recurring_type,
+        "amount": str(payment.amount) if payment else "",
+        "payment_id": payment.id if payment else None,
+        "entered_by_name": (
+            payment.entered_by.username if payment and payment.entered_by_id else None
+        ),
+    }
+
 
 class PaymentHeadViewSet(viewsets.ModelViewSet):
     queryset = PaymentHead.objects.all()
@@ -25,6 +57,8 @@ class PaymentHeadViewSet(viewsets.ModelViewSet):
             qs = qs.filter(is_active=True)
         elif active in ("false", "False", "N", "n", "0"):
             qs = qs.filter(is_active=False)
+        if "recurring_type" in self.request.query_params:
+            qs = qs.filter(recurring_type__in=parse_recurring_types(self.request, default=()))
         return qs
 
 
@@ -80,11 +114,26 @@ class DailyPaymentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="entry-sheet")
     def entry_sheet(self, request):
-        """One row per active payment head (ACTIVE='Y') for the selected date."""
+        """Two-column entry sheet: Daily heads and Monthly heads on one screen.
+
+        Daily is checked by default. Monthly heads are returned in the monthly
+        column only when Monthly is requested.
+        """
         business_date = request.query_params.get("business_date")
         if not business_date:
             raise ValidationError("Business date is required.")
         institution_id = scoped_institution_id(request)
+        recurring_types = parse_recurring_types(request)
+        monthly_flag = request.query_params.get("monthly")
+        monthly_selected = PaymentHead.RecurringType.MONTHLY in recurring_types or monthly_flag in (
+            "true",
+            "True",
+            "1",
+            "Y",
+            "y",
+        )
+        daily_off = request.query_params.get("daily") in ("false", "False", "0", "N", "n")
+        daily_selected = not daily_off
         heads = PaymentHead.objects.filter(is_active=True).order_by("code")
         payments_by_head = {}
         if institution_id is not None:
@@ -99,26 +148,34 @@ class DailyPaymentViewSet(viewsets.ModelViewSet):
             )
             for payment in existing:
                 payments_by_head[payment.payment_head_id] = payment
-        rows = []
+        daily_rows = []
+        monthly_rows = []
         for head in heads:
-            payment = payments_by_head.get(head.id)
-            rows.append(
-                {
-                    "payment_head": head.id,
-                    "code": head.code,
-                    "description": head.description,
-                    "amount": str(payment.amount) if payment else "",
-                    "payment_id": payment.id if payment else None,
-                    "entered_by_name": (
-                        payment.entered_by.username if payment and payment.entered_by_id else None
-                    ),
-                }
-            )
+            row = payment_entry_row(head, payments_by_head.get(head.id))
+            if head.recurring_type == PaymentHead.RecurringType.MONTHLY:
+                monthly_rows.append(row)
+            else:
+                daily_rows.append(row)
+        visible_daily = daily_rows if daily_selected else []
+        visible_monthly = monthly_rows if monthly_selected else []
         return Response(
             {
                 "institution_id": institution_id,
                 "business_date": business_date,
-                "rows": rows,
+                "layout": "two_column",
+                "recurring_types": [
+                    value
+                    for value, selected in (
+                        (PaymentHead.RecurringType.DAILY, daily_selected),
+                        (PaymentHead.RecurringType.MONTHLY, monthly_selected),
+                    )
+                    if selected
+                ],
+                "daily_selected": daily_selected,
+                "monthly_selected": monthly_selected,
+                "daily_rows": visible_daily,
+                "monthly_rows": visible_monthly,
+                "rows": visible_daily + visible_monthly,
             }
         )
 

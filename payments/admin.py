@@ -5,7 +5,8 @@ from payments.models import DailyPayment, PaymentHead
 
 @admin.register(PaymentHead)
 class PaymentHeadAdmin(admin.ModelAdmin):
-    list_display = ("id", "code", "description", "is_active")
+    list_display = ("id", "code", "description", "recurring_type", "is_active")
+    list_filter = ("is_active", "recurring_type")
     search_fields = ("code", "description")
 
 

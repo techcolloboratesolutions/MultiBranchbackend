@@ -49,21 +49,62 @@ class PaymentEntrySheetTests(TestCase):
             institution=self.inst,
             role=role,
         )
-        self.rent = PaymentHead.objects.create(code="RENT", description="Rent")
+        self.rent = PaymentHead.objects.create(
+            code="RENT",
+            description="Rent",
+            recurring_type=PaymentHead.RecurringType.MONTHLY,
+        )
         PaymentHead.objects.create(code="SAL", description="Salary")
         PaymentHead.objects.create(code="OLD", description="Inactive", is_active=False)
         self.client = APIClient()
         self.client.force_authenticate(self.user)
 
-    def test_entry_sheet_lists_only_active_heads(self):
+    def test_entry_sheet_defaults_to_daily_column_only(self):
         response = self.client.get(
             "/api/payments/entry-sheet/",
             {"business_date": "2026-08-17", "institution_id": self.inst.id},
         )
         self.assertEqual(response.status_code, 200)
-        codes = [row["code"] for row in response.data["rows"]]
-        self.assertEqual(codes, ["RENT", "SAL"])
-        self.assertNotIn("OLD", codes)
+        self.assertEqual(response.data["layout"], "two_column")
+        self.assertTrue(response.data["daily_selected"])
+        self.assertFalse(response.data["monthly_selected"])
+        self.assertEqual([row["code"] for row in response.data["daily_rows"]], ["SAL"])
+        self.assertEqual(response.data["monthly_rows"], [])
+        self.assertEqual([row["code"] for row in response.data["rows"]], ["SAL"])
+        self.assertNotIn("OLD", [row["code"] for row in response.data["rows"]])
+
+    def test_entry_sheet_monthly_adds_second_column_daily_stays(self):
+        response = self.client.get(
+            "/api/payments/entry-sheet/",
+            {
+                "business_date": "2026-08-17",
+                "institution_id": self.inst.id,
+                "recurring_type": "Monthly",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["daily_selected"])
+        self.assertTrue(response.data["monthly_selected"])
+        self.assertEqual([row["code"] for row in response.data["daily_rows"]], ["SAL"])
+        self.assertEqual([row["code"] for row in response.data["monthly_rows"]], ["RENT"])
+        self.assertEqual(response.data["monthly_rows"][0]["recurring_type"], "Monthly")
+        self.assertEqual([row["code"] for row in response.data["rows"]], ["SAL", "RENT"])
+
+    def test_entry_sheet_both_columns_when_daily_and_monthly_checked(self):
+        response = self.client.get(
+            "/api/payments/entry-sheet/",
+            {
+                "business_date": "2026-08-17",
+                "institution_id": self.inst.id,
+                "monthly": "true",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["daily_selected"])
+        self.assertTrue(response.data["monthly_selected"])
+        self.assertEqual([row["code"] for row in response.data["daily_rows"]], ["SAL"])
+        self.assertEqual([row["code"] for row in response.data["monthly_rows"]], ["RENT"])
+        self.assertEqual([row["code"] for row in response.data["rows"]], ["SAL", "RENT"])
 
     def test_bulk_skips_inactive_heads(self):
         inactive = PaymentHead.objects.get(code="OLD")

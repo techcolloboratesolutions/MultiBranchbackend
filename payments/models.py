@@ -14,9 +14,19 @@ class PaymentHead(models.Model):
     Original design listed RECEIPT_HEADS twice; payments use this separate catalog.
     """
 
+    class RecurringType(models.TextChoices):
+        DAILY = "Daily", "Daily"
+        MONTHLY = "Monthly", "Monthly"
+
     code = models.CharField(max_length=30, unique=True)
     description = models.CharField(max_length=255)
     is_active = models.BooleanField(default=True, db_index=True)
+    recurring_type = models.CharField(
+        max_length=20,
+        choices=RecurringType.choices,
+        default=RecurringType.DAILY,
+        db_index=True,
+    )
 
     class Meta:
         db_table = "payment_heads"

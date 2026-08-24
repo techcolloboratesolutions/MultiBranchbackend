@@ -39,12 +39,12 @@ RECEIPT_HEADS = [
 ]
 
 PAYMENT_HEADS = [
-    ("SAL", "Salaries"),
-    ("RENT", "Rent"),
-    ("UTIL", "Utilities"),
-    ("VEND", "Vendor Payments"),
-    ("MAIN", "Maintenance"),
-    ("OTHER", "Other Payments"),
+    ("SAL", "Salaries", "Monthly"),
+    ("RENT", "Rent", "Monthly"),
+    ("UTIL", "Utilities", "Daily"),
+    ("VEND", "Vendor Payments", "Daily"),
+    ("MAIN", "Maintenance", "Daily"),
+    ("OTHER", "Other Payments", "Daily"),
 ]
 
 PARTNERS = [
@@ -140,10 +140,14 @@ class Command(BaseCommand):
                 defaults={"description": desc, "is_active": True},
             )
 
-        for code, desc in PAYMENT_HEADS:
+        for code, desc, recurring_type in PAYMENT_HEADS:
             PaymentHead.objects.get_or_create(
                 code=code,
-                defaults={"description": desc, "is_active": True},
+                defaults={
+                    "description": desc,
+                    "is_active": True,
+                    "recurring_type": recurring_type,
+                },
             )
 
         group, _ = PartnerGroup.objects.get_or_create(

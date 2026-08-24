@@ -6,7 +6,7 @@ from payments.models import DailyPayment, PaymentHead
 class PaymentHeadSerializer(serializers.ModelSerializer):
     class Meta:
         model = PaymentHead
-        fields = ("id", "code", "description", "is_active")
+        fields = ("id", "code", "description", "is_active", "recurring_type")
 
 
 class DailyPaymentSerializer(serializers.ModelSerializer):
