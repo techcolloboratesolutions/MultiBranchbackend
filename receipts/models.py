@@ -17,6 +17,8 @@ class ReceiptHead(models.Model):
     class Meta:
         db_table = "receipt_heads"
         ordering = ["code"]
+        verbose_name = "Sales Head"
+        verbose_name_plural = "Sales Heads"
 
     def __str__(self) -> str:
         return f"{self.code} - {self.description}"

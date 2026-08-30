@@ -18,13 +18,14 @@ from reports.services import (
     monthly_head_matrix,
     monthly_trend,
     period_totals,
+    sum_expenses,
     sum_payments,
     sum_receipts,
 )
 from institutions.models import Institution
 from django.utils import timezone
 
-from core.money import calculate_total_business
+from core.money import calculate_balance, calculate_total_business
 
 
 class MonthlyReportView(APIView):
@@ -46,14 +47,21 @@ class MonthlyReportView(APIView):
                 {"id": head.id, "code": head.code, "description": head.description}
                 for head in matrix["payment_heads"]
             ],
+            "expense_heads": [
+                {"id": head.id, "code": head.code, "description": head.description}
+                for head in matrix["expense_heads"]
+            ],
             "rows": [
                 {
                     "date": row["date"].isoformat(),
                     "receipts": {key: str(value) for key, value in row["receipts"].items()},
                     "payments": {key: str(value) for key, value in row["payments"].items()},
+                    "expenses": {key: str(value) for key, value in row["expenses"].items()},
                     "receipt": str(row["receipt"]),
                     "payment": str(row["payment"]),
+                    "expense": str(row["expense"]),
                     "business": str(row["business"]),
+                    "balance": str(row["balance"]),
                 }
                 for row in matrix["rows"]
             ],
@@ -63,9 +71,14 @@ class MonthlyReportView(APIView):
             "payment_head_totals": {
                 str(head_id): str(amount) for head_id, amount in matrix["payment_head_totals"].items()
             },
+            "expense_head_totals": {
+                str(head_id): str(amount) for head_id, amount in matrix["expense_head_totals"].items()
+            },
             "total_receipt": str(totals["total_receipt"]),
             "total_payment": str(totals["total_payment"]),
+            "total_expense": str(totals["total_expense"]),
             "total_business": str(totals["total_business"]),
+            "total_balance": str(totals["total_balance"]),
         }
         return Response(payload)
 
@@ -83,15 +96,18 @@ class MonthlyReportExportView(APIView):
 
         receipt_heads = matrix["receipt_heads"]
         payment_heads = matrix["payment_heads"]
+        expense_heads = matrix["expense_heads"]
         wb = Workbook()
         ws = wb.active
         ws.title = "Monthly"
         header = (
             ["Institution", "Date"]
             + [f"{head.code} - {head.description}" for head in receipt_heads]
-            + ["Total Receipt"]
+            + ["Total Sales"]
             + [f"{head.code} - {head.description}" for head in payment_heads]
-            + ["Total Payment", "Business"]
+            + ["Total Purchase", "Business"]
+            + [f"{head.code} - {head.description}" for head in expense_heads]
+            + ["Total Expense", "Balance"]
         )
         ws.append(header)
         for row in matrix["rows"]:
@@ -103,6 +119,10 @@ class MonthlyReportExportView(APIView):
                 line.append(float(row["payments"].get(str(head.id), 0)))
             line.append(float(row["payment"]))
             line.append(float(row["business"]))
+            for head in expense_heads:
+                line.append(float(row["expenses"].get(str(head.id), 0)))
+            line.append(float(row["expense"]))
+            line.append(float(row["balance"]))
             ws.append(line)
         total_line = [inst_name, "TOTAL"]
         for head in receipt_heads:
@@ -112,6 +132,10 @@ class MonthlyReportExportView(APIView):
             total_line.append(float(matrix["payment_head_totals"][head.id]))
         total_line.append(float(totals["total_payment"]))
         total_line.append(float(totals["total_business"]))
+        for head in expense_heads:
+            total_line.append(float(matrix["expense_head_totals"][head.id]))
+        total_line.append(float(totals["total_expense"]))
+        total_line.append(float(totals["total_balance"]))
         ws.append(total_line)
         buffer = BytesIO()
         wb.save(buffer)
@@ -148,15 +172,22 @@ class DayByInstitutionReportView(APIView):
                     {"id": head.id, "code": head.code, "description": head.description}
                     for head in matrix["payment_heads"]
                 ],
+                "expense_heads": [
+                    {"id": head.id, "code": head.code, "description": head.description}
+                    for head in matrix["expense_heads"]
+                ],
                 "rows": [
                     {
                         "institution_id": row["institution_id"],
                         "institution_name": row["institution_name"],
                         "receipts": {key: str(value) for key, value in row["receipts"].items()},
                         "payments": {key: str(value) for key, value in row["payments"].items()},
+                        "expenses": {key: str(value) for key, value in row["expenses"].items()},
                         "receipt": str(row["receipt"]),
                         "payment": str(row["payment"]),
+                        "expense": str(row["expense"]),
                         "business": str(row["business"]),
+                        "balance": str(row["balance"]),
                     }
                     for row in matrix["rows"]
                 ],
@@ -166,9 +197,14 @@ class DayByInstitutionReportView(APIView):
                 "payment_head_totals": {
                     str(head_id): str(amount) for head_id, amount in matrix["payment_head_totals"].items()
                 },
+                "expense_head_totals": {
+                    str(head_id): str(amount) for head_id, amount in matrix["expense_head_totals"].items()
+                },
                 "total_receipt": str(totals["total_receipt"]),
                 "total_payment": str(totals["total_payment"]),
+                "total_expense": str(totals["total_expense"]),
                 "total_business": str(totals["total_business"]),
+                "total_balance": str(totals["total_balance"]),
             }
         )
 
@@ -182,6 +218,7 @@ class DashboardView(APIView):
         institution_id = scoped_institution_id(request)
         today_receipt = sum_receipts(institution_id, today, today)
         today_payment = sum_payments(institution_id, today, today)
+        today_expense = sum_expenses(institution_id, today, today)
         month_totals = period_totals(institution_id, today.year, today.month)
         rows, _ = daily_breakdown(institution_id, today.year, today.month)
         trend = monthly_trend(institution_id, today, months=12)
@@ -200,12 +237,16 @@ class DashboardView(APIView):
             "today": {
                 "receipt": str(today_receipt),
                 "payment": str(today_payment),
+                "expense": str(today_expense),
                 "business": str(calculate_total_business(today_receipt, today_payment)),
+                "balance": str(calculate_balance(today_receipt, today_payment, today_expense)),
             },
             "month": {
                 "receipt": str(month_totals["total_receipt"]),
                 "payment": str(month_totals["total_payment"]),
+                "expense": str(month_totals["total_expense"]),
                 "business": str(month_totals["total_business"]),
+                "balance": str(month_totals["total_balance"]),
             },
             "daily_series": [
                 {
@@ -213,7 +254,9 @@ class DashboardView(APIView):
                     "label": row["date"].strftime("%d %b"),
                     "receipt": float(row["receipt"]),
                     "payment": float(row["payment"]),
+                    "expense": float(row["expense"]),
                     "business": float(row["business"]),
+                    "balance": float(row["balance"]),
                 }
                 for row in rows
             ],
@@ -224,7 +267,9 @@ class DashboardView(APIView):
                     "month": row["month"],
                     "receipt": float(row["receipt"]),
                     "payment": float(row["payment"]),
+                    "expense": float(row["expense"]),
                     "business": float(row["business"]),
+                    "balance": float(row["balance"]),
                 }
                 for row in trend
             ],
@@ -240,6 +285,8 @@ class DashboardView(APIView):
                     "business": float(row["business"]),
                     "receipt": float(row["receipt"]),
                     "payment": float(row["payment"]),
+                    "expense": float(row["expense"]),
+                    "balance": float(row["balance"]),
                 }
                 for row in institution_business(today.year, today.month)
             ]
@@ -250,6 +297,8 @@ class DashboardView(APIView):
                     "business": float(row["business"]),
                     "receipt": float(row["receipt"]),
                     "payment": float(row["payment"]),
+                    "expense": float(row["expense"]),
+                    "balance": float(row["balance"]),
                 }
                 for row in institution_day_totals(today)
             ]

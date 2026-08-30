@@ -49,7 +49,9 @@ def preview_wages(institution_id, year: int, month: int):
         "month": month,
         "total_receipt": totals["total_receipt"],
         "total_payment": totals["total_payment"],
+        "total_expense": totals["total_expense"],
         "total_business": totals["total_business"],
+        "total_balance": totals["total_balance"],
         "share_total": share_total,
         "partners": partners,
     }

@@ -7,44 +7,30 @@ from core.models import AuditMixin
 from institutions.models import Institution
 
 
-class PaymentHead(models.Model):
-    """
-    Legacy intent: PAYMENT_HEADS.
-
-    Original design listed RECEIPT_HEADS twice; payments use this separate catalog.
-    """
-
-    class RecurringType(models.TextChoices):
-        DAILY = "Daily", "Daily"
-        MONTHLY = "Monthly", "Monthly"
+class ExpenseHead(models.Model):
+    """Legacy table: EXPENSE_HEADS. Global catalog (not per branch)."""
 
     code = models.CharField(max_length=30, unique=True)
     description = models.CharField(max_length=255)
     is_active = models.BooleanField(default=True, db_index=True)
-    recurring_type = models.CharField(
-        max_length=20,
-        choices=RecurringType.choices,
-        default=RecurringType.DAILY,
-        db_index=True,
-    )
 
     class Meta:
-        db_table = "payment_heads"
+        db_table = "expense_heads"
         ordering = ["code"]
-        verbose_name = "Purchase Head"
-        verbose_name_plural = "Purchase Heads"
+        verbose_name = "Expense Head"
+        verbose_name_plural = "Expense Heads"
 
     def __str__(self) -> str:
         return f"{self.code} - {self.description}"
 
 
-class DailyPayment(AuditMixin):
-    """Legacy table: DAILY_PAYMENTS. Soft-deactivate instead of deleting."""
+class DailyExpense(AuditMixin):
+    """Legacy table: Daily_Expenses. Soft-deactivate instead of deleting."""
 
-    payment_head = models.ForeignKey(
-        PaymentHead,
+    expense_head = models.ForeignKey(
+        ExpenseHead,
         on_delete=models.PROTECT,
-        related_name="daily_payments",
+        related_name="daily_expenses",
     )
     amount = models.DecimalField(
         max_digits=18,
@@ -56,16 +42,16 @@ class DailyPayment(AuditMixin):
     institution = models.ForeignKey(
         Institution,
         on_delete=models.PROTECT,
-        related_name="daily_payments",
+        related_name="daily_expenses",
     )
 
     class Meta:
-        db_table = "daily_payments"
+        db_table = "daily_expenses"
         indexes = [
             models.Index(fields=["institution", "business_date"]),
             models.Index(fields=["business_date"]),
             models.Index(fields=["transaction_date"]),
-            models.Index(fields=["payment_head"]),
+            models.Index(fields=["expense_head"]),
             models.Index(fields=["institution", "is_active", "business_date"]),
         ]
         ordering = ["-business_date", "-id"]

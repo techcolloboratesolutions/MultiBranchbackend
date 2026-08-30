@@ -6,6 +6,7 @@ from django.db import transaction
 from accounts.models import Role, User
 from institutions.models import Institution, MainInstitution
 from partners.models import Partner, PartnerGroup, PartnerGroupEntry
+from expenses.models import ExpenseHead
 from payments.models import PaymentHead
 from receipts.models import ReceiptHead
 
@@ -36,6 +37,13 @@ RECEIPT_HEADS = [
     ("FEE", "Fee Collection"),
     ("GRANT", "Grants"),
     ("OTHER", "Other Receipts"),
+]
+
+EXPENSE_HEADS = [
+    ("STAFF", "Staff Expenses"),
+    ("TRAVEL", "Travel"),
+    ("OFFICE", "Office Supplies"),
+    ("MISC", "Miscellaneous"),
 ]
 
 PAYMENT_HEADS = [
@@ -136,6 +144,12 @@ class Command(BaseCommand):
 
         for code, desc in RECEIPT_HEADS:
             ReceiptHead.objects.get_or_create(
+                code=code,
+                defaults={"description": desc, "is_active": True},
+            )
+
+        for code, desc in EXPENSE_HEADS:
+            ExpenseHead.objects.get_or_create(
                 code=code,
                 defaults={"description": desc, "is_active": True},
             )

@@ -4,6 +4,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from accounts.models import Role, User
+from expenses.models import DailyExpense, ExpenseHead
 from institutions.models import Institution, MainInstitution
 from payments.models import DailyPayment, PaymentHead
 from receipts.models import DailyReceipt, ReceiptHead
@@ -27,6 +28,7 @@ class MonthlyHeadReportTests(TestCase):
         ReceiptHead.objects.create(code="OLD", description="Inactive", is_active=False)
         self.rent = PaymentHead.objects.create(code="RENT", description="Rent")
         self.sal = PaymentHead.objects.create(code="SAL", description="Salary")
+        self.travel = ExpenseHead.objects.create(code="TRAVEL", description="Travel")
         DailyReceipt.objects.create(
             receipt_head=self.cash,
             amount=Decimal("50000.00"),
@@ -55,6 +57,13 @@ class MonthlyHeadReportTests(TestCase):
             institution=self.inst,
             entered_by=self.user,
         )
+        DailyExpense.objects.create(
+            expense_head=self.travel,
+            amount=Decimal("5000.00"),
+            business_date="2026-08-01",
+            institution=self.inst,
+            entered_by=self.user,
+        )
 
     def test_head_columns_and_sums(self):
         matrix = monthly_head_matrix(self.inst.id, 2026, 8)
@@ -63,7 +72,9 @@ class MonthlyHeadReportTests(TestCase):
         self.assertEqual(matrix["receipt_head_totals"][self.cash.id], Decimal("70000.00"))
         self.assertEqual(matrix["receipt_head_totals"][self.bank.id], Decimal("10000.00"))
         self.assertEqual(matrix["payment_head_totals"][self.rent.id], Decimal("15000.00"))
-        self.assertEqual(matrix["totals"]["total_business"], Decimal("65000.00"))
+        self.assertEqual(matrix["expense_head_totals"][self.travel.id], Decimal("5000.00"))
+        self.assertEqual(matrix["totals"]["total_business"], Decimal("95000.00"))
+        self.assertEqual(matrix["totals"]["total_balance"], Decimal("90000.00"))
 
     def test_monthly_api_includes_heads(self):
         client = APIClient()
@@ -79,7 +90,8 @@ class MonthlyHeadReportTests(TestCase):
         series = monthly_trend(self.inst.id, date(2026, 8, 17), months=12)
         self.assertEqual(len(series), 12)
         self.assertEqual(series[-1]["label"], "Aug 2026")
-        self.assertEqual(series[-1]["business"], Decimal("65000.00"))
+        self.assertEqual(series[-1]["business"], Decimal("95000.00"))
+        self.assertEqual(series[-1]["balance"], Decimal("90000.00"))
 
 
 class AdminDashboardAllTests(TestCase):
