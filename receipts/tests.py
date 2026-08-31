@@ -32,6 +32,16 @@ class DailyReceiptTests(TestCase):
         self.assertEqual(rec.amount, Decimal("1000000.00"))
         self.assertTrue(rec.is_active)
 
+    def test_create_receipt_allows_negative_amount(self):
+        rec = DailyReceipt.objects.create(
+            receipt_head=self.head,
+            amount=Decimal("-125.50"),
+            business_date="2026-08-01",
+            institution=self.inst,
+            entered_by=self.user,
+        )
+        self.assertEqual(rec.amount, Decimal("-125.50"))
+
     def test_deactivate_does_not_delete(self):
         rec = DailyReceipt.objects.create(
             receipt_head=self.head,

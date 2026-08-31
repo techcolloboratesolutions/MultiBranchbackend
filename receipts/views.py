@@ -153,8 +153,6 @@ class DailyReceiptViewSet(viewsets.ModelViewSet):
                     amount = Decimal(str(raw_amount))
                 except (InvalidOperation, TypeError) as exc:
                     raise ValidationError("Enter a valid amount.") from exc
-                if amount < 0:
-                    raise ValidationError("Amount cannot be negative.")
                 if amount == 0:
                     continue
                 existing = (
