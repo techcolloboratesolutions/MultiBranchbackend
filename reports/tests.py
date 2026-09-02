@@ -74,7 +74,7 @@ class MonthlyHeadReportTests(TestCase):
         self.assertEqual(matrix["payment_head_totals"][self.rent.id], Decimal("15000.00"))
         self.assertEqual(matrix["expense_head_totals"][self.travel.id], Decimal("5000.00"))
         self.assertEqual(matrix["totals"]["total_business"], Decimal("95000.00"))
-        self.assertEqual(matrix["totals"]["total_balance"], Decimal("90000.00"))
+        self.assertEqual(matrix["totals"]["total_balance"], Decimal("75000.00"))
 
     def test_monthly_api_includes_heads(self):
         client = APIClient()
@@ -91,7 +91,7 @@ class MonthlyHeadReportTests(TestCase):
         self.assertEqual(len(series), 12)
         self.assertEqual(series[-1]["label"], "Aug 2026")
         self.assertEqual(series[-1]["business"], Decimal("95000.00"))
-        self.assertEqual(series[-1]["balance"], Decimal("90000.00"))
+        self.assertEqual(series[-1]["balance"], Decimal("75000.00"))
 
 
 class AdminDashboardAllTests(TestCase):

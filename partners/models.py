@@ -87,6 +87,10 @@ class PartnerGroupEntry(models.Model):
                 fields=["partner_group", "institution", "partner"],
                 name="uniq_group_institution_partner",
             ),
+            models.UniqueConstraint(
+                fields=["institution", "partner"],
+                name="uniq_institution_partner",
+            ),
         ]
         indexes = [
             models.Index(fields=["institution", "partner_group", "is_active"]),
@@ -101,3 +105,26 @@ class PartnerGroupEntry(models.Model):
             Decimal("0") <= self.share_percent <= Decimal("100")
         ):
             raise ValidationError({"share_percent": "Share percent must be between 0 and 100."})
+        from partners.services import (
+            validate_group_institution_share_limit,
+            validate_institution_single_group,
+            validate_partner_once_per_institution,
+        )
+
+        validate_institution_single_group(
+            self.institution_id,
+            self.partner_group_id,
+            exclude_pk=self.pk,
+        )
+        validate_partner_once_per_institution(
+            self.institution_id,
+            self.partner_id,
+            exclude_pk=self.pk,
+        )
+        validate_group_institution_share_limit(
+            self.partner_group_id,
+            self.institution_id,
+            self.share_percent,
+            exclude_pk=self.pk,
+            is_active=self.is_active,
+        )

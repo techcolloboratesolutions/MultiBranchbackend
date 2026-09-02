@@ -12,8 +12,9 @@ class BusinessWage(AuditMixin):
     """
     Legacy table: BUSINESS_WAGES.
 
-    Totals are a confirmed snapshot. On save (Phase 7) they must be
-    recalculated from DailyReceipt / DailyPayment inside a transaction.
+    Totals are a confirmed snapshot. On save they are recalculated from
+    period sales, purchases, and expenses. total_business = sales + purchase;
+    total_balance = sales - expense.
     """
 
     institution = models.ForeignKey(
@@ -24,9 +25,11 @@ class BusinessWage(AuditMixin):
     )
     wages_month = models.PositiveSmallIntegerField()
     wages_year = models.PositiveSmallIntegerField()
-    total_receipt = models.DecimalField(max_digits=18, decimal_places=2)
-    total_payment = models.DecimalField(max_digits=18, decimal_places=2)
+    total_sales = models.DecimalField(max_digits=18, decimal_places=2)
+    total_purchase = models.DecimalField(max_digits=18, decimal_places=2)
     total_business = models.DecimalField(max_digits=18, decimal_places=2)
+    total_expense = models.DecimalField(max_digits=18, decimal_places=2)
+    total_balance = models.DecimalField(max_digits=18, decimal_places=2)
     business_percent = models.DecimalField(
         max_digits=7,
         decimal_places=4,

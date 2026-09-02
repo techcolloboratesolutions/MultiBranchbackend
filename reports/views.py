@@ -216,11 +216,13 @@ class DashboardView(APIView):
         today = timezone.localdate()
         user = request.user
         institution_id = scoped_institution_id(request)
+        year = int(request.query_params.get("year") or today.year)
+        month = int(request.query_params.get("month") or today.month)
         today_receipt = sum_receipts(institution_id, today, today)
         today_payment = sum_payments(institution_id, today, today)
         today_expense = sum_expenses(institution_id, today, today)
-        month_totals = period_totals(institution_id, today.year, today.month)
-        rows, _ = daily_breakdown(institution_id, today.year, today.month)
+        month_totals = period_totals(institution_id, year, month)
+        rows, _ = daily_breakdown(institution_id, year, month)
         trend = monthly_trend(institution_id, today, months=12)
 
         scope_name = user.institution.name
@@ -230,6 +232,8 @@ class DashboardView(APIView):
         payload = {
             "role": user.role_code,
             "scope": "all" if institution_id is None else "institution",
+            "year": year,
+            "month": month,
             "institution": {
                 "id": institution_id or user.institution_id,
                 "name": scope_name,
@@ -288,7 +292,7 @@ class DashboardView(APIView):
                     "expense": float(row["expense"]),
                     "balance": float(row["balance"]),
                 }
-                for row in institution_business(today.year, today.month)
+                for row in institution_business(year, month)
             ]
             payload["institution_today"] = [
                 {

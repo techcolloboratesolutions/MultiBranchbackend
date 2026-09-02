@@ -25,18 +25,23 @@ def _period(request, require_institution=False):
     return year, month, institution_id
 
 
+def _preview_or_error(institution_id, year, month):
+    try:
+        return preview_wages(institution_id, year, month)
+    except DjangoValidationError as exc:
+        raise ValidationError(exc.messages if hasattr(exc, "messages") else str(exc))
+
+
 class WageCalculateView(APIView):
     permission_classes = [IsAdminOrManager]
 
     def get(self, request):
         year, month, institution_id = _period(request, require_institution=True)
-        data = preview_wages(institution_id, year, month)
-        return Response(_serialize_preview(data))
+        return Response(_serialize_preview(_preview_or_error(institution_id, year, month)))
 
     def post(self, request):
         year, month, institution_id = _period(request, require_institution=True)
-        data = preview_wages(institution_id, year, month)
-        return Response(_serialize_preview(data))
+        return Response(_serialize_preview(_preview_or_error(institution_id, year, month)))
 
 
 class WageSaveView(APIView):
@@ -61,7 +66,7 @@ class WageExportView(APIView):
 
     def get(self, request):
         year, month, institution_id = _period(request, require_institution=True)
-        data = preview_wages(institution_id, year, month)
+        data = _preview_or_error(institution_id, year, month)
         inst_name = Institution.objects.get(pk=institution_id).name
         wb = Workbook()
         ws = wb.active
@@ -76,6 +81,7 @@ class WageExportView(APIView):
                 "Total Expense",
                 "Total Business",
                 "Balance",
+                "Group",
                 "Partner",
                 "Share %",
                 "Partner Wage",
@@ -87,11 +93,12 @@ class WageExportView(APIView):
                     inst_name,
                     year,
                     month,
-                    float(data["total_receipt"]),
-                    float(data["total_payment"]),
+                    float(data["total_sales"]),
+                    float(data["total_purchase"]),
                     float(data["total_expense"]),
                     float(data["total_business"]),
                     float(data["total_balance"]),
+                    row.get("group_name", ""),
                     row["partner_name"],
                     float(row["share_percent"]),
                     float(row["partner_wage_amount"]),
@@ -112,18 +119,21 @@ def _serialize_preview(data):
         "institution_id": data["institution_id"],
         "year": data["year"],
         "month": data["month"],
-        "total_receipt": str(data["total_receipt"]),
-        "total_payment": str(data["total_payment"]),
+        "total_sales": str(data["total_sales"]),
+        "total_purchase": str(data["total_purchase"]),
         "total_expense": str(data["total_expense"]),
         "total_business": str(data["total_business"]),
         "total_balance": str(data["total_balance"]),
         "share_total": str(data["share_total"]),
+        "group_name": data.get("group_name") or "",
         "partners": [
             {
                 "partner_id": row["partner_id"],
                 "partner_name": row["partner_name"],
+                "group_name": row.get("group_name", ""),
                 "share_percent": str(row["share_percent"]),
                 "partner_wage_amount": str(row["partner_wage_amount"]),
+                "partner_mobile": row.get("partner_mobile") or "",
             }
             for row in data["partners"]
         ],

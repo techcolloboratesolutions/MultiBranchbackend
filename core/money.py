@@ -8,13 +8,15 @@ def money(value: Decimal) -> Decimal:
     return Decimal(value).quantize(MONEY_QUANTIZE, rounding=ROUND_HALF_UP)
 
 
-def calculate_total_business(total_receipt: Decimal, total_payment: Decimal) -> Decimal:
-    return money(Decimal(total_receipt) + Decimal(total_payment))
+def calculate_total_business(total_sales: Decimal, total_purchase: Decimal) -> Decimal:
+    return money(Decimal(total_sales) + Decimal(total_purchase))
 
 
-def calculate_balance(total_receipt: Decimal, total_payment: Decimal, total_expense: Decimal) -> Decimal:
-    return money(calculate_total_business(total_receipt, total_payment) - Decimal(total_expense))
+def calculate_balance(total_sales: Decimal, total_purchase: Decimal, total_expense: Decimal) -> Decimal:
+    # Purchase is not part of balance; callers still pass it for a stable signature.
+    _ = total_purchase
+    return money(Decimal(total_sales) - Decimal(total_expense))
 
 
-def calculate_partner_wage(total_business: Decimal, share_percent: Decimal) -> Decimal:
-    return money(Decimal(total_business) * Decimal(share_percent) / HUNDRED)
+def calculate_partner_wage(base_amount: Decimal, share_percent: Decimal) -> Decimal:
+    return money(Decimal(base_amount) * Decimal(share_percent) / HUNDRED)
