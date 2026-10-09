@@ -84,6 +84,73 @@ class AuthApiTests(TestCase):
         self.assertEqual(response.status_code, 403)
 
 
+class ChiefManagerScopeTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.main = MainInstitution.objects.create(name="Horizon Group")
+        self.other_main = MainInstitution.objects.create(name="Other Group")
+        self.head = Institution.objects.create(name="Head Office", main_institution=self.main)
+        self.branch = Institution.objects.create(name="Andheri Branch", main_institution=self.main)
+        self.other_branch = Institution.objects.create(name="Other Head Office", main_institution=self.other_main)
+        self.chief_role = Role.objects.get(role_code=Role.Code.CHIEF_MANAGER, institution__isnull=True)
+        self.admin_role = Role.objects.create(role_code=Role.Code.ADMIN, role_description="Admin")
+        self.chief = User.objects.create_user(
+            username="chief",
+            password="ChangeMeChief123!",
+            full_name="Chief Manager",
+            institution=self.head,
+            role=self.chief_role,
+        )
+        self.head_catalog = ReceiptHead.objects.create(code="CASH", description="Cash")
+        self.client.force_authenticate(self.chief)
+
+    def test_lists_only_branches_under_own_main_institution(self):
+        response = self.client.get("/api/institutions/?page_size=100")
+        self.assertEqual(response.status_code, 200)
+        ids = sorted(row["id"] for row in response.data["results"])
+        self.assertEqual(ids, sorted([self.head.id, self.branch.id]))
+
+    def test_cannot_read_another_main_institution(self):
+        response = self.client.get(f"/api/receipts/?institution_id={self.other_branch.id}")
+        self.assertEqual(response.status_code, 403)
+
+    def test_can_save_sales_for_a_branch_under_own_main(self):
+        response = self.client.post(
+            "/api/receipts/",
+            {
+                "receipt_head": self.head_catalog.id,
+                "amount": "100.00",
+                "business_date": "2026-08-01",
+                "institution": self.branch.id,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["institution"], self.branch.id)
+
+    def test_cannot_add_users_institutions_roles_or_heads(self):
+        self.assertEqual(self.client.get("/api/users/").status_code, 403)
+        self.assertEqual(self.client.get("/api/roles/").status_code, 403)
+        self.assertEqual(self.client.get("/api/main-institutions/").status_code, 403)
+        self.assertEqual(
+            self.client.post(
+                "/api/institutions/",
+                {"name": "New Branch", "main_institution": self.main.id},
+                format="json",
+            ).status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.post(
+                "/api/receipt-heads/",
+                {"code": "NEW", "description": "New"},
+                format="json",
+            ).status_code,
+            403,
+        )
+        self.assertEqual(self.client.get("/api/receipt-heads/").status_code, 200)
+
+
 class ReceiptApiTests(TestCase):
     def setUp(self):
         self.client = APIClient()

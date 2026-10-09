@@ -12,23 +12,68 @@ from receipts.models import ReceiptHead
 
 ADMIN_PASSWORD = "ChangeMeAdmin123!"
 MANAGER_PASSWORD = "ChangeMeManager123!"
+CHIEF_PASSWORD = "ChangeMeChief123!"
 
 BRANCHES = [
-    ("Head Office", "Mumbai"),
-    ("Andheri Branch", "Mumbai"),
-    ("Pune Branch", "Pune"),
-    ("Nagpur Branch", "Nagpur"),
-    ("Nashik Branch", "Nashik"),
-    ("Delhi Branch", "New Delhi"),
-    ("Noida Branch", "Noida"),
-    ("Jaipur Branch", "Jaipur"),
-    ("Ahmedabad Branch", "Ahmedabad"),
-    ("Surat Branch", "Surat"),
-    ("Bengaluru Branch", "Bengaluru"),
-    ("Chennai Branch", "Chennai"),
-    ("Hyderabad Branch", "Hyderabad"),
-    ("Kolkata Branch", "Kolkata"),
-    ("Kochi Branch", "Kochi"),
+    ("Head Office", "Mumbai", "Maharashtra"),
+    ("Andheri Branch", "Mumbai", "Maharashtra"),
+    ("Pune Branch", "Pune", "Maharashtra"),
+    ("Nagpur Branch", "Nagpur", "Maharashtra"),
+    ("Nashik Branch", "Nashik", "Maharashtra"),
+    ("Delhi Branch", "New Delhi", "Delhi"),
+    ("Noida Branch", "Noida", "Uttar Pradesh"),
+    ("Jaipur Branch", "Jaipur", "Rajasthan"),
+    ("Ahmedabad Branch", "Ahmedabad", "Gujarat"),
+    ("Surat Branch", "Surat", "Gujarat"),
+    ("Bengaluru Branch", "Bengaluru", "Karnataka"),
+    ("Chennai Branch", "Chennai", "Tamil Nadu"),
+    ("Hyderabad Branch", "Hyderabad", "Telangana"),
+    ("Kolkata Branch", "Kolkata", "West Bengal"),
+    ("Kochi Branch", "Kochi", "Kerala"),
+]
+
+# Horizon keeps the original branch names and manager01–manager15.
+# The two added groups prefix branch names so they stay distinct in the lists.
+ORGANIZATIONS = [
+    {
+        "name": "Horizon Group",
+        "legal_name": "Horizon Group Private Limited",
+        "place": "Mumbai",
+        "city": "Mumbai",
+        "state": "Maharashtra",
+        "address": "Nariman Point, Mumbai",
+        "email": "admin@horizongroup.example",
+        "phone": "02200000000",
+        "branch_prefix": "",
+        "chief_username": "chief",
+        "manager_start": 1,
+    },
+    {
+        "name": "Western Bay Group",
+        "legal_name": "Western Bay Group Private Limited",
+        "place": "Ahmedabad",
+        "city": "Ahmedabad",
+        "state": "Gujarat",
+        "address": "CG Road, Ahmedabad",
+        "email": "admin@westernbay.example",
+        "phone": "07900000000",
+        "branch_prefix": "West ",
+        "chief_username": "chief2",
+        "manager_start": 16,
+    },
+    {
+        "name": "Eastern Bay Group",
+        "legal_name": "Eastern Bay Group Private Limited",
+        "place": "Kolkata",
+        "city": "Kolkata",
+        "state": "West Bengal",
+        "address": "Park Street, Kolkata",
+        "email": "admin@easternbay.example",
+        "phone": "03300000000",
+        "branch_prefix": "East ",
+        "chief_username": "chief3",
+        "manager_start": 31,
+    },
 ]
 
 RECEIPT_HEADS = [
@@ -62,42 +107,19 @@ PARTNERS = [
 ]
 
 
+def _ensure_user(username, password, **defaults):
+    user, created = User.objects.get_or_create(username=username, defaults=defaults)
+    if created:
+        user.set_password(password)
+        user.save()
+    return user
+
+
 class Command(BaseCommand):
-    help = "Idempotent seed: 1 main org, 15 branches, admin, 15 managers, catalogs, partners."
+    help = "Idempotent seed: 3 main institutions, 15 branches each, admin, chief per main, manager per branch."
 
     @transaction.atomic
     def handle(self, *args, **options):
-        main, _ = MainInstitution.objects.get_or_create(
-            name="Horizon Group",
-            defaults={
-                "place": "Mumbai",
-                "address": "Nariman Point, Mumbai",
-                "legal_name": "Horizon Group Private Limited",
-                "country": "India",
-                "state": "Maharashtra",
-                "city": "Mumbai",
-                "district": "Mumbai",
-                "email": "admin@horizongroup.example",
-                "phone": "02200000000",
-                "is_active": True,
-            },
-        )
-
-        institutions = []
-        for name, city in BRANCHES:
-            inst, _ = Institution.objects.get_or_create(
-                name=name,
-                main_institution=main,
-                defaults={
-                    "city": city,
-                    "country": "India",
-                    "state": "Maharashtra" if city in {"Mumbai", "Pune", "Nagpur", "Nashik"} else "",
-                    "contact_person": f"Manager - {name}",
-                    "is_active": True,
-                },
-            )
-            institutions.append(inst)
-
         admin_role, _ = Role.objects.get_or_create(
             role_code=Role.Code.ADMIN,
             institution=None,
@@ -108,39 +130,95 @@ class Command(BaseCommand):
             institution=None,
             defaults={"role_description": "Branch manager", "is_active": True},
         )
-
-        head_office = institutions[0]
-        admin, created = User.objects.get_or_create(
-            username="admin",
-            defaults={
-                "full_name": "System Administrator",
-                "email": "admin@horizongroup.example",
-                "institution": head_office,
-                "role": admin_role,
-                "is_staff": True,
-                "is_superuser": True,
-                "status": User.Status.ACTIVE,
-            },
+        chief_role, _ = Role.objects.get_or_create(
+            role_code=Role.Code.CHIEF_MANAGER,
+            institution=None,
+            defaults={"role_description": "Chief Manager", "is_active": True},
         )
-        if created:
-            admin.set_password(ADMIN_PASSWORD)
-            admin.save()
 
-        for index, inst in enumerate(institutions, start=1):
-            username = f"manager{index:02d}"
-            user, created = User.objects.get_or_create(
-                username=username,
+        all_institutions = []
+        org_summaries = []
+        for org in ORGANIZATIONS:
+            main, _ = MainInstitution.objects.get_or_create(
+                name=org["name"],
                 defaults={
-                    "full_name": f"Manager {index:02d} - {inst.name}",
-                    "email": f"{username}@horizongroup.example",
-                    "institution": inst,
-                    "role": manager_role,
-                    "status": User.Status.ACTIVE,
+                    "place": org["place"],
+                    "address": org["address"],
+                    "legal_name": org["legal_name"],
+                    "country": "India",
+                    "state": org["state"],
+                    "city": org["city"],
+                    "district": org["city"],
+                    "email": org["email"],
+                    "phone": org["phone"],
+                    "is_active": True,
                 },
             )
-            if created:
-                user.set_password(MANAGER_PASSWORD)
-                user.save()
+            institutions = []
+            for branch_name, city, state in BRANCHES:
+                name = f"{org['branch_prefix']}{branch_name}"
+                inst, _ = Institution.objects.get_or_create(
+                    name=name,
+                    main_institution=main,
+                    defaults={
+                        "city": city,
+                        "country": "India",
+                        "state": state,
+                        "contact_person": f"Manager - {name}",
+                        "is_active": True,
+                    },
+                )
+                institutions.append(inst)
+            all_institutions.extend(institutions)
+
+            head_office = institutions[0]
+            chief = _ensure_user(
+                org["chief_username"],
+                CHIEF_PASSWORD,
+                full_name=f"Chief Manager - {main.name}",
+                email=f"{org['chief_username']}@{org['email'].split('@', 1)[1]}",
+                institution=head_office,
+                role=chief_role,
+                status=User.Status.ACTIVE,
+            )
+            if chief.institution_id != head_office.id or chief.role_id != chief_role.id:
+                chief.institution = head_office
+                chief.role = chief_role
+                chief.save(update_fields=["institution", "role"])
+
+            manager_names = []
+            for offset, inst in enumerate(institutions):
+                index = org["manager_start"] + offset
+                username = f"manager{index:02d}"
+                manager_names.append(username)
+                user = _ensure_user(
+                    username,
+                    MANAGER_PASSWORD,
+                    full_name=f"Manager {index:02d} - {inst.name}",
+                    email=f"{username}@{org['email'].split('@', 1)[1]}",
+                    institution=inst,
+                    role=manager_role,
+                    status=User.Status.ACTIVE,
+                )
+                if user.institution_id != inst.id or user.role_id != manager_role.id:
+                    user.institution = inst
+                    user.role = manager_role
+                    user.save(update_fields=["institution", "role"])
+
+            org_summaries.append((main, head_office, org["chief_username"], manager_names[0], manager_names[-1]))
+
+        horizon_head = all_institutions[0]
+        _ensure_user(
+            "admin",
+            ADMIN_PASSWORD,
+            full_name="System Administrator",
+            email="admin@horizongroup.example",
+            institution=horizon_head,
+            role=admin_role,
+            is_staff=True,
+            is_superuser=True,
+            status=User.Status.ACTIVE,
+        )
 
         for code, desc in RECEIPT_HEADS:
             ReceiptHead.objects.get_or_create(
@@ -184,7 +262,7 @@ class Command(BaseCommand):
             )
             partner_rows.append((partner, share))
 
-        for inst in institutions:
+        for inst in all_institutions:
             for partner, share in partner_rows:
                 PartnerGroupEntry.objects.get_or_create(
                     partner_group=group,
@@ -194,8 +272,12 @@ class Command(BaseCommand):
                 )
 
         self.stdout.write(self.style.SUCCESS("Seed data applied."))
-        self.stdout.write(f"Main institution: {main.name} (id={main.id})")
-        self.stdout.write(f"Institutions: {len(institutions)}")
+        self.stdout.write(f"Main institutions: {len(org_summaries)}")
+        self.stdout.write(f"Institutions: {len(all_institutions)}")
         self.stdout.write("Dev logins (hashed in DB, change before sharing):")
-        self.stdout.write(f"  admin / {ADMIN_PASSWORD}")
-        self.stdout.write(f"  manager01..manager15 / {MANAGER_PASSWORD}")
+        self.stdout.write(f"  admin / {ADMIN_PASSWORD}  (all main institutions)")
+        for main, head, chief_username, first_manager, last_manager in org_summaries:
+            self.stdout.write(
+                f"  {main.name}: {chief_username} / {CHIEF_PASSWORD} on {head.name}; "
+                f"{first_manager}..{last_manager} / {MANAGER_PASSWORD}"
+            )

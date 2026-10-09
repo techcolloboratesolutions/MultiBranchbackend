@@ -19,35 +19,42 @@ def _date_range(year: int, month: int):
     return start, end
 
 
-def sum_receipts(institution_id, start: date, end: date) -> Decimal:
+def _limit(qs, institution_id, main_institution_id=None, *, institution_model=False):
+    if institution_id is not None:
+        field = "pk" if institution_model else "institution_id"
+        return qs.filter(**{field: institution_id})
+    if main_institution_id is not None:
+        field = "main_institution_id" if institution_model else "institution__main_institution_id"
+        return qs.filter(**{field: main_institution_id})
+    return qs
+
+
+def sum_receipts(institution_id, start: date, end: date, main_institution_id=None) -> Decimal:
     qs = DailyReceipt.objects.filter(is_active=True, business_date__range=(start, end))
-    if institution_id is not None:
-        qs = qs.filter(institution_id=institution_id)
+    qs = _limit(qs, institution_id, main_institution_id)
     total = qs.aggregate(total=Sum("amount"))["total"]
     return money(total or ZERO)
 
 
-def sum_payments(institution_id, start: date, end: date) -> Decimal:
+def sum_payments(institution_id, start: date, end: date, main_institution_id=None) -> Decimal:
     qs = DailyPayment.objects.filter(is_active=True, business_date__range=(start, end))
-    if institution_id is not None:
-        qs = qs.filter(institution_id=institution_id)
+    qs = _limit(qs, institution_id, main_institution_id)
     total = qs.aggregate(total=Sum("amount"))["total"]
     return money(total or ZERO)
 
 
-def sum_expenses(institution_id, start: date, end: date) -> Decimal:
+def sum_expenses(institution_id, start: date, end: date, main_institution_id=None) -> Decimal:
     qs = DailyExpense.objects.filter(is_active=True, business_date__range=(start, end))
-    if institution_id is not None:
-        qs = qs.filter(institution_id=institution_id)
+    qs = _limit(qs, institution_id, main_institution_id)
     total = qs.aggregate(total=Sum("amount"))["total"]
     return money(total or ZERO)
 
 
-def period_totals(institution_id, year: int, month: int):
+def period_totals(institution_id, year: int, month: int, main_institution_id=None):
     start, end = _date_range(year, month)
-    receipt = sum_receipts(institution_id, start, end)
-    payment = sum_payments(institution_id, start, end)
-    expense = sum_expenses(institution_id, start, end)
+    receipt = sum_receipts(institution_id, start, end, main_institution_id)
+    payment = sum_payments(institution_id, start, end, main_institution_id)
+    expense = sum_expenses(institution_id, start, end, main_institution_id)
     return {
         "total_receipt": receipt,
         "total_payment": payment,
@@ -59,15 +66,23 @@ def period_totals(institution_id, year: int, month: int):
     }
 
 
-def daily_breakdown(institution_id, year: int, month: int):
+def daily_breakdown(institution_id, year: int, month: int, main_institution_id=None):
     start, end = _date_range(year, month)
-    receipts = DailyReceipt.objects.filter(is_active=True, business_date__range=(start, end)).values("business_date")
-    payments = DailyPayment.objects.filter(is_active=True, business_date__range=(start, end)).values("business_date")
-    expenses = DailyExpense.objects.filter(is_active=True, business_date__range=(start, end)).values("business_date")
-    if institution_id is not None:
-        receipts = receipts.filter(institution_id=institution_id)
-        payments = payments.filter(institution_id=institution_id)
-        expenses = expenses.filter(institution_id=institution_id)
+    receipts = _limit(
+        DailyReceipt.objects.filter(is_active=True, business_date__range=(start, end)),
+        institution_id,
+        main_institution_id,
+    ).values("business_date")
+    payments = _limit(
+        DailyPayment.objects.filter(is_active=True, business_date__range=(start, end)),
+        institution_id,
+        main_institution_id,
+    ).values("business_date")
+    expenses = _limit(
+        DailyExpense.objects.filter(is_active=True, business_date__range=(start, end)),
+        institution_id,
+        main_institution_id,
+    ).values("business_date")
 
     receipt_map = {
         row["business_date"]: money(row["total"] or ZERO)
@@ -97,11 +112,11 @@ def daily_breakdown(institution_id, year: int, month: int):
                 "balance": calculate_balance(rec, pay, exp),
             }
         )
-    totals = period_totals(institution_id, year, month)
+    totals = period_totals(institution_id, year, month, main_institution_id)
     return rows, totals
 
 
-def monthly_head_matrix(institution_id, year: int, month: int):
+def monthly_head_matrix(institution_id, year: int, month: int, main_institution_id=None):
     """Daily matrix of active sales, purchase, and expense heads."""
     start, end = _date_range(year, month)
     receipt_heads = list(ReceiptHead.objects.filter(is_active=True).order_by("code"))
@@ -123,10 +138,9 @@ def monthly_head_matrix(institution_id, year: int, month: int):
         business_date__range=(start, end),
         expense_head__is_active=True,
     )
-    if institution_id is not None:
-        rec_qs = rec_qs.filter(institution_id=institution_id)
-        pay_qs = pay_qs.filter(institution_id=institution_id)
-        exp_qs = exp_qs.filter(institution_id=institution_id)
+    rec_qs = _limit(rec_qs, institution_id, main_institution_id)
+    pay_qs = _limit(pay_qs, institution_id, main_institution_id)
+    exp_qs = _limit(exp_qs, institution_id, main_institution_id)
 
     rec_map = {
         (row["business_date"], row["receipt_head_id"]): money(row["total"] or ZERO)
@@ -182,7 +196,7 @@ def monthly_head_matrix(institution_id, year: int, month: int):
             }
         )
 
-    totals = period_totals(institution_id, year, month)
+    totals = period_totals(institution_id, year, month, main_institution_id)
     return {
         "receipt_heads": receipt_heads,
         "payment_heads": payment_heads,
@@ -195,14 +209,26 @@ def monthly_head_matrix(institution_id, year: int, month: int):
     }
 
 
-def institution_date_head_matrix(day: date):
+def institution_date_head_matrix(day: date, main_institution_id=None):
     """Sales, purchase, and expense heads for every active branch on one business date."""
     receipt_heads = list(ReceiptHead.objects.filter(is_active=True).order_by("code"))
     payment_heads = list(PaymentHead.objects.filter(is_active=True).order_by("code"))
     expense_heads = list(ExpenseHead.objects.filter(is_active=True).order_by("code"))
-    rec_qs = DailyReceipt.objects.filter(is_active=True, business_date=day, receipt_head__is_active=True)
-    pay_qs = DailyPayment.objects.filter(is_active=True, business_date=day, payment_head__is_active=True)
-    exp_qs = DailyExpense.objects.filter(is_active=True, business_date=day, expense_head__is_active=True)
+    rec_qs = _limit(
+        DailyReceipt.objects.filter(is_active=True, business_date=day, receipt_head__is_active=True),
+        None,
+        main_institution_id,
+    )
+    pay_qs = _limit(
+        DailyPayment.objects.filter(is_active=True, business_date=day, payment_head__is_active=True),
+        None,
+        main_institution_id,
+    )
+    exp_qs = _limit(
+        DailyExpense.objects.filter(is_active=True, business_date=day, expense_head__is_active=True),
+        None,
+        main_institution_id,
+    )
     rec_map = {
         (row["institution_id"], row["receipt_head_id"]): money(row["total"] or ZERO)
         for row in rec_qs.values("institution_id", "receipt_head_id").annotate(total=Sum("amount"))
@@ -219,7 +245,12 @@ def institution_date_head_matrix(day: date):
     pay_totals = {head.id: ZERO for head in payment_heads}
     exp_totals = {head.id: ZERO for head in expense_heads}
     rows = []
-    for inst in Institution.objects.filter(is_active=True).order_by("name"):
+    for inst in _limit(
+        Institution.objects.filter(is_active=True),
+        None,
+        main_institution_id,
+        institution_model=True,
+    ).order_by("name"):
         receipts = {}
         rec_total = ZERO
         for head in receipt_heads:
@@ -277,13 +308,13 @@ def institution_date_head_matrix(day: date):
     }
 
 
-def institution_business(year: int, month: int):
+def institution_business(year: int, month: int, main_institution_id=None):
     start, end = _date_range(year, month)
-    return institution_period_totals(start, end)
+    return institution_period_totals(start, end, main_institution_id)
 
 
-def institution_day_totals(day: date):
-    return institution_period_totals(day, day)
+def institution_day_totals(day: date, main_institution_id=None):
+    return institution_period_totals(day, day, main_institution_id)
 
 
 def _empty_institution_entry(institution_id, institution_name):
@@ -296,26 +327,31 @@ def _empty_institution_entry(institution_id, institution_name):
     }
 
 
-def institution_period_totals(start: date, end: date):
+def institution_period_totals(start: date, end: date, main_institution_id=None):
     data = {
         inst.id: _empty_institution_entry(inst.id, inst.name)
-        for inst in Institution.objects.filter(is_active=True).order_by("name")
+        for inst in _limit(
+            Institution.objects.filter(is_active=True),
+            None,
+            main_institution_id,
+            institution_model=True,
+        ).order_by("name")
     }
-    receipts = (
-        DailyReceipt.objects.filter(is_active=True, business_date__range=(start, end))
-        .values("institution_id", "institution__name")
-        .annotate(total=Sum("amount"))
-    )
-    payments = (
-        DailyPayment.objects.filter(is_active=True, business_date__range=(start, end))
-        .values("institution_id", "institution__name")
-        .annotate(total=Sum("amount"))
-    )
-    expenses = (
-        DailyExpense.objects.filter(is_active=True, business_date__range=(start, end))
-        .values("institution_id", "institution__name")
-        .annotate(total=Sum("amount"))
-    )
+    receipts = _limit(
+        DailyReceipt.objects.filter(is_active=True, business_date__range=(start, end)),
+        None,
+        main_institution_id,
+    ).values("institution_id", "institution__name").annotate(total=Sum("amount"))
+    payments = _limit(
+        DailyPayment.objects.filter(is_active=True, business_date__range=(start, end)),
+        None,
+        main_institution_id,
+    ).values("institution_id", "institution__name").annotate(total=Sum("amount"))
+    expenses = _limit(
+        DailyExpense.objects.filter(is_active=True, business_date__range=(start, end)),
+        None,
+        main_institution_id,
+    ).values("institution_id", "institution__name").annotate(total=Sum("amount"))
     for row in receipts:
         entry = data.setdefault(row["institution_id"], _empty_institution_entry(row["institution_id"], row["institution__name"]))
         entry["receipt"] = money(row["total"] or ZERO)
@@ -333,7 +369,7 @@ def institution_period_totals(start: date, end: date):
     return sorted(result, key=lambda x: x["institution_name"])
 
 
-def monthly_trend(institution_id, as_of: date, months: int = 12):
+def monthly_trend(institution_id, as_of: date, months: int = 12, main_institution_id=None):
     """Last N calendar months of sales, purchase, expense, business, and balance."""
     year = as_of.year
     month = as_of.month
@@ -347,7 +383,7 @@ def monthly_trend(institution_id, as_of: date, months: int = 12):
     periods.reverse()
     series = []
     for period_year, period_month in periods:
-        totals = period_totals(institution_id, period_year, period_month)
+        totals = period_totals(institution_id, period_year, period_month, main_institution_id)
         series.append(
             {
                 "year": period_year,

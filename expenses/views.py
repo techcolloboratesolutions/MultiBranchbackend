@@ -68,6 +68,9 @@ class DailyExpenseViewSet(viewsets.ModelViewSet):
         serializer.save(entered_by=self.request.user, institution=institution)
 
     def perform_update(self, serializer):
+        institution = serializer.validated_data.get("institution")
+        if institution is not None:
+            scoped_institution_id(self.request, institution.id)
         serializer.save(modified_by=self.request.user)
 
     @action(detail=True, methods=["post"])

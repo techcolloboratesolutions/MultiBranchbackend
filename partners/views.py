@@ -1,6 +1,6 @@
 from rest_framework import viewsets
 
-from accounts.permissions import IsAdminOrReadOnlyManager
+from accounts.permissions import IsAdminOrChiefOrReadOnlyManager
 from accounts.scoping import apply_institution_filter, scoped_institution_id
 from partners.models import Partner, PartnerGroup, PartnerGroupEntry
 from partners.serializers import (
@@ -13,7 +13,7 @@ from partners.serializers import (
 class PartnerViewSet(viewsets.ModelViewSet):
     queryset = Partner.objects.all()
     serializer_class = PartnerSerializer
-    permission_classes = [IsAdminOrReadOnlyManager]
+    permission_classes = [IsAdminOrChiefOrReadOnlyManager]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -33,7 +33,7 @@ class PartnerViewSet(viewsets.ModelViewSet):
 class PartnerGroupViewSet(viewsets.ModelViewSet):
     queryset = PartnerGroup.objects.all()
     serializer_class = PartnerGroupSerializer
-    permission_classes = [IsAdminOrReadOnlyManager]
+    permission_classes = [IsAdminOrChiefOrReadOnlyManager]
 
 
 class PartnerGroupEntryViewSet(viewsets.ModelViewSet):
@@ -41,7 +41,22 @@ class PartnerGroupEntryViewSet(viewsets.ModelViewSet):
         "partner_group", "institution", "partner"
     ).all()
     serializer_class = PartnerGroupEntrySerializer
-    permission_classes = [IsAdminOrReadOnlyManager]
+    permission_classes = [IsAdminOrChiefOrReadOnlyManager]
 
     def get_queryset(self):
         return apply_institution_filter(super().get_queryset(), self.request)
+
+    def _guard_institution(self, serializer):
+        institution = serializer.validated_data.get("institution")
+        if institution is None and serializer.instance is not None:
+            institution = serializer.instance.institution
+        if institution is not None:
+            scoped_institution_id(self.request, institution.id)
+
+    def perform_create(self, serializer):
+        self._guard_institution(serializer)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._guard_institution(serializer)
+        serializer.save()

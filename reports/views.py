@@ -8,8 +8,8 @@ from rest_framework.views import APIView
 
 from datetime import date as date_type
 
-from accounts.permissions import IsAdminOrManager, IsAdminRole
-from accounts.scoping import scoped_institution_id
+from accounts.permissions import IsAdminOrChiefManager, IsAdminOrManager
+from accounts.scoping import scoped_institution_id, scoped_main_institution_id
 from reports.services import (
     daily_breakdown,
     institution_business,
@@ -22,7 +22,7 @@ from reports.services import (
     sum_payments,
     sum_receipts,
 )
-from institutions.models import Institution
+from institutions.models import Institution, MainInstitution
 from django.utils import timezone
 
 from core.money import calculate_balance, calculate_total_business
@@ -32,8 +32,8 @@ class MonthlyReportView(APIView):
     permission_classes = [IsAdminOrManager]
 
     def get(self, request):
-        year, month, institution_id = _period_params(request)
-        matrix = monthly_head_matrix(institution_id, year, month)
+        year, month, institution_id, main_institution_id = _period_params(request)
+        matrix = monthly_head_matrix(institution_id, year, month, main_institution_id)
         totals = matrix["totals"]
         payload = {
             "year": year,
@@ -87,12 +87,14 @@ class MonthlyReportExportView(APIView):
     permission_classes = [IsAdminOrManager]
 
     def get(self, request):
-        year, month, institution_id = _period_params(request)
-        matrix = monthly_head_matrix(institution_id, year, month)
+        year, month, institution_id, main_institution_id = _period_params(request)
+        matrix = monthly_head_matrix(institution_id, year, month, main_institution_id)
         totals = matrix["totals"]
         inst_name = "ALL"
         if institution_id:
             inst_name = Institution.objects.get(pk=institution_id).name
+        elif main_institution_id:
+            inst_name = MainInstitution.objects.get(pk=main_institution_id).name
 
         receipt_heads = matrix["receipt_heads"]
         payment_heads = matrix["payment_heads"]
@@ -149,7 +151,7 @@ class MonthlyReportExportView(APIView):
 
 
 class DayByInstitutionReportView(APIView):
-    permission_classes = [IsAdminRole]
+    permission_classes = [IsAdminOrChiefManager]
 
     def get(self, request):
         raw = (request.query_params.get("date") or "").strip()
@@ -159,7 +161,10 @@ class DayByInstitutionReportView(APIView):
             day = date_type.fromisoformat(raw)
         except ValueError:
             return Response({"detail": "Invalid date."}, status=400)
-        matrix = institution_date_head_matrix(day)
+        main_institution_id = (
+            request.user.main_institution_id if getattr(request.user, "is_chief_manager_role", False) else None
+        )
+        matrix = institution_date_head_matrix(day, main_institution_id)
         totals = matrix["totals"]
         return Response(
             {
@@ -216,17 +221,18 @@ class DashboardView(APIView):
         today = timezone.localdate()
         user = request.user
         institution_id = scoped_institution_id(request)
+        main_institution_id = scoped_main_institution_id(request, institution_id)
         year = int(request.query_params.get("year") or today.year)
         month = int(request.query_params.get("month") or today.month)
-        today_receipt = sum_receipts(institution_id, today, today)
-        today_payment = sum_payments(institution_id, today, today)
-        today_expense = sum_expenses(institution_id, today, today)
-        month_totals = period_totals(institution_id, year, month)
-        rows, _ = daily_breakdown(institution_id, year, month)
-        trend = monthly_trend(institution_id, today, months=12)
+        today_receipt = sum_receipts(institution_id, today, today, main_institution_id)
+        today_payment = sum_payments(institution_id, today, today, main_institution_id)
+        today_expense = sum_expenses(institution_id, today, today, main_institution_id)
+        month_totals = period_totals(institution_id, year, month, main_institution_id)
+        rows, _ = daily_breakdown(institution_id, year, month, main_institution_id)
+        trend = monthly_trend(institution_id, today, months=12, main_institution_id=main_institution_id)
 
         scope_name = user.institution.name
-        if user.is_admin_role and institution_id is None:
+        if institution_id is None and (user.is_admin_role or user.is_chief_manager_role):
             scope_name = "ALL branches"
 
         payload = {
@@ -279,9 +285,13 @@ class DashboardView(APIView):
             ],
         }
 
-        if user.is_admin_role:
-            payload["institutions_total"] = Institution.objects.count()
-            payload["institutions_active"] = Institution.objects.filter(is_active=True).count()
+        if user.is_admin_role or user.is_chief_manager_role:
+            series_main = user.main_institution_id if user.is_chief_manager_role else None
+            inst_qs = Institution.objects.all()
+            if series_main is not None:
+                inst_qs = inst_qs.filter(main_institution_id=series_main)
+            payload["institutions_total"] = inst_qs.count()
+            payload["institutions_active"] = inst_qs.filter(is_active=True).count()
             payload["institution_series"] = [
                 {
                     "id": row["institution_id"],
@@ -292,7 +302,7 @@ class DashboardView(APIView):
                     "expense": float(row["expense"]),
                     "balance": float(row["balance"]),
                 }
-                for row in institution_business(year, month)
+                for row in institution_business(year, month, series_main)
             ]
             payload["institution_today"] = [
                 {
@@ -304,7 +314,7 @@ class DashboardView(APIView):
                     "expense": float(row["expense"]),
                     "balance": float(row["balance"]),
                 }
-                for row in institution_day_totals(today)
+                for row in institution_day_totals(today, series_main)
             ]
 
         return Response(payload)
@@ -315,4 +325,5 @@ def _period_params(request):
     year = int(request.query_params.get("year") or today.year)
     month = int(request.query_params.get("month") or today.month)
     institution_id = scoped_institution_id(request)
-    return year, month, institution_id
+    main_institution_id = scoped_main_institution_id(request, institution_id)
+    return year, month, institution_id, main_institution_id

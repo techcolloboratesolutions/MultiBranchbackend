@@ -166,6 +166,40 @@ class AdminDashboardAllTests(TestCase):
         self.assertEqual(row_a["receipt"], "100.00")
         self.assertEqual(row_b["payment"], "40.00")
 
+    def test_chief_manager_dashboard_excludes_other_main_institutions(self):
+        from django.utils import timezone
+
+        other_main = MainInstitution.objects.create(name="Other Group")
+        other = Institution.objects.create(name="Other Branch", main_institution=other_main)
+        chief_role = Role.objects.get(role_code=Role.Code.CHIEF_MANAGER, institution__isnull=True)
+        chief = User.objects.create_user(
+            username="chief",
+            password="ChangeMeChief123!",
+            full_name="Chief Manager",
+            institution=self.a,
+            role=chief_role,
+        )
+        cash = ReceiptHead.objects.get(code="CASH")
+        DailyReceipt.objects.create(
+            receipt_head=cash,
+            amount=Decimal("999.00"),
+            business_date=timezone.localdate(),
+            institution=other,
+            entered_by=chief,
+        )
+        client = APIClient()
+        client.force_authenticate(chief)
+        response = client.get("/api/reports/dashboard/")
+        self.assertEqual(response.status_code, 200)
+        names = [row["name"] for row in response.data["institution_today"]]
+        self.assertEqual(names, ["Branch A", "Branch B"])
+        self.assertNotIn("Other Branch", names)
+        self.assertEqual(response.data["institutions_total"], 2)
+        day = client.get("/api/reports/monthly/by-institution/", {"date": timezone.localdate().isoformat()})
+        self.assertEqual(day.status_code, 200)
+        day_names = [row["institution_name"] for row in day.data["rows"]]
+        self.assertEqual(day_names, ["Branch A", "Branch B"])
+
     def test_day_by_institution_forbidden_for_manager(self):
         from django.utils import timezone
 

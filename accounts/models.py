@@ -6,11 +6,12 @@ from institutions.models import Institution
 
 
 class Role(models.Model):
-    """Legacy table: ADMN_ROLES. institution is null for global roles (ADMIN, MANAGER)."""
+    """Legacy table: ADMN_ROLES. institution is null for global roles (ADMIN, MANAGER, CHIEF_MANAGER)."""
 
     class Code(models.TextChoices):
         ADMIN = "ADMIN", "Admin"
         MANAGER = "MANAGER", "Manager"
+        CHIEF_MANAGER = "CHIEF_MANAGER", "Chief Manager"
 
     role_code = models.CharField(max_length=50, db_index=True)
     role_description = models.CharField(max_length=255)
@@ -132,6 +133,14 @@ class User(AbstractBaseUser, PermissionsMixin):
     @property
     def is_manager_role(self) -> bool:
         return self.role.role_code == Role.Code.MANAGER
+
+    @property
+    def is_chief_manager_role(self) -> bool:
+        return self.role.role_code == Role.Code.CHIEF_MANAGER
+
+    @property
+    def main_institution_id(self):
+        return self.institution.main_institution_id
 
 
 class PasswordResetToken(models.Model):
