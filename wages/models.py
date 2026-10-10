@@ -13,8 +13,8 @@ class BusinessWage(AuditMixin):
     Legacy table: BUSINESS_WAGES.
 
     Totals are a confirmed snapshot. On save they are recalculated from
-    period sales, purchases, and expenses. total_business = sales + purchase;
-    total_balance = sales - expense.
+    period sales, purchases, and expenses.     total_business = sales + purchase;
+    total_balance = sales - purchase - expense.
     """
 
     institution = models.ForeignKey(

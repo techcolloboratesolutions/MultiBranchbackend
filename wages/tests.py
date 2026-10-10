@@ -13,14 +13,14 @@ class WageCalculationTests(SimpleTestCase):
         business = calculate_total_business(Decimal("1000000.00"), Decimal("400000.00"))
         self.assertEqual(business, Decimal("1400000.00"))
 
-    def test_balance_is_sales_minus_expense(self):
+    def test_balance_is_sales_minus_purchase_minus_expense(self):
         balance = calculate_balance(Decimal("1000000.00"), Decimal("400000.00"), Decimal("100000.00"))
-        self.assertEqual(balance, Decimal("900000.00"))
+        self.assertEqual(balance, Decimal("500000.00"))
 
     def test_partner_wage_is_balance_times_share(self):
         balance = calculate_balance(Decimal("1000000.00"), Decimal("400000.00"), Decimal("100000.00"))
         wage = calculate_partner_wage(balance, Decimal("25"))
-        self.assertEqual(wage, Decimal("225000.00"))
+        self.assertEqual(wage, Decimal("125000.00"))
 
     def test_example_three_partners(self):
         balance = Decimal("600000.00")
