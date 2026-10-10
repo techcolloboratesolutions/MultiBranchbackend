@@ -25,7 +25,7 @@ from reports.services import (
 from institutions.models import Institution, MainInstitution
 from django.utils import timezone
 
-from core.money import calculate_balance, calculate_total_business
+from core.money import calculate_balance, calculate_total_business, money
 
 
 class MonthlyReportView(APIView):
@@ -137,7 +137,9 @@ class MonthlyReportExportView(APIView):
         for head in expense_heads:
             total_line.append(float(matrix["expense_head_totals"][head.id]))
         total_line.append(float(totals["total_expense"]))
-        total_line.append(float(totals["total_balance"]))
+        total_line.append(
+            float(money(totals["total_business"] - totals["total_payment"] - totals["total_expense"]))
+        )
         ws.append(total_line)
         buffer = BytesIO()
         wb.save(buffer)
