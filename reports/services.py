@@ -1,5 +1,5 @@
 from calendar import monthrange
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.db.models import Sum
@@ -114,6 +114,134 @@ def daily_breakdown(institution_id, year: int, month: int, main_institution_id=N
         )
     totals = period_totals(institution_id, year, month, main_institution_id)
     return rows, totals
+
+
+def combined_daily_window(start: date, end: date, main_institution_id=None):
+    """Sales, purchase, and expense for every day from start through end, summed across branches."""
+    if start > end:
+        start = end
+    receipt_map = {
+        row["business_date"]: money(row["total"] or ZERO)
+        for row in _limit(
+            DailyReceipt.objects.filter(is_active=True, business_date__range=(start, end)),
+            None,
+            main_institution_id,
+        )
+        .values("business_date")
+        .annotate(total=Sum("amount"))
+    }
+    payment_map = {
+        row["business_date"]: money(row["total"] or ZERO)
+        for row in _limit(
+            DailyPayment.objects.filter(is_active=True, business_date__range=(start, end)),
+            None,
+            main_institution_id,
+        )
+        .values("business_date")
+        .annotate(total=Sum("amount"))
+    }
+    expense_map = {
+        row["business_date"]: money(row["total"] or ZERO)
+        for row in _limit(
+            DailyExpense.objects.filter(is_active=True, business_date__range=(start, end)),
+            None,
+            main_institution_id,
+        )
+        .values("business_date")
+        .annotate(total=Sum("amount"))
+    }
+    rows = []
+    day = start
+    while day <= end:
+        rec = receipt_map.get(day, ZERO)
+        pay = payment_map.get(day, ZERO)
+        exp = expense_map.get(day, ZERO)
+        rows.append(
+            {
+                "date": day,
+                "receipt": rec,
+                "payment": pay,
+                "expense": exp,
+                "business": calculate_total_business(rec, pay),
+                "balance": calculate_balance(rec, pay, exp),
+            }
+        )
+        day += timedelta(days=1)
+    return {"start": start, "end": end, "rows": rows}
+
+
+def sales_purchase_period(institution_id, start: date, end: date, main_institution_id=None):
+    """Daily sales and purchase heads between two dates, including days with no entries."""
+    receipt_heads = list(ReceiptHead.objects.filter(is_active=True).order_by("code"))
+    payment_heads = list(PaymentHead.objects.filter(is_active=True).order_by("code"))
+    rec_qs = _limit(
+        DailyReceipt.objects.filter(
+            is_active=True,
+            business_date__range=(start, end),
+            receipt_head__is_active=True,
+        ),
+        institution_id,
+        main_institution_id,
+    )
+    pay_qs = _limit(
+        DailyPayment.objects.filter(
+            is_active=True,
+            business_date__range=(start, end),
+            payment_head__is_active=True,
+        ),
+        institution_id,
+        main_institution_id,
+    )
+    rec_map = {
+        (row["business_date"], row["receipt_head_id"]): money(row["total"] or ZERO)
+        for row in rec_qs.values("business_date", "receipt_head_id").annotate(total=Sum("amount"))
+    }
+    pay_map = {
+        (row["business_date"], row["payment_head_id"]): money(row["total"] or ZERO)
+        for row in pay_qs.values("business_date", "payment_head_id").annotate(total=Sum("amount"))
+    }
+    rec_totals = {head.id: ZERO for head in receipt_heads}
+    pay_totals = {head.id: ZERO for head in payment_heads}
+    rows = []
+    day = start
+    while day <= end:
+        receipts = {}
+        rec_total = ZERO
+        for head in receipt_heads:
+            amount = rec_map.get((day, head.id), ZERO)
+            receipts[str(head.id)] = amount
+            rec_total += amount
+            rec_totals[head.id] += amount
+        payments = {}
+        pay_total = ZERO
+        for head in payment_heads:
+            amount = pay_map.get((day, head.id), ZERO)
+            payments[str(head.id)] = amount
+            pay_total += amount
+            pay_totals[head.id] += amount
+        rows.append(
+            {
+                "date": day,
+                "receipts": receipts,
+                "payments": payments,
+                "receipt": money(rec_total),
+                "payment": money(pay_total),
+                "business": calculate_total_business(rec_total, pay_total),
+            }
+        )
+        day += timedelta(days=1)
+    rec_sum = sum(rec_totals.values(), ZERO)
+    pay_sum = sum(pay_totals.values(), ZERO)
+    return {
+        "receipt_heads": receipt_heads,
+        "payment_heads": payment_heads,
+        "rows": rows,
+        "receipt_head_totals": rec_totals,
+        "payment_head_totals": pay_totals,
+        "total_receipt": money(rec_sum),
+        "total_payment": money(pay_sum),
+        "total_business": calculate_total_business(rec_sum, pay_sum),
+    }
 
 
 def monthly_head_matrix(institution_id, year: int, month: int, main_institution_id=None):

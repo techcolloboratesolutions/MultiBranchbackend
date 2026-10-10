@@ -6,11 +6,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from datetime import date as date_type
+from calendar import monthrange
+from datetime import date as date_type, timedelta
 
 from accounts.permissions import IsAdminOrChiefManager, IsAdminOrManager
 from accounts.scoping import scoped_institution_id, scoped_main_institution_id
 from reports.services import (
+    combined_daily_window,
     daily_breakdown,
     institution_business,
     institution_date_head_matrix,
@@ -18,6 +20,7 @@ from reports.services import (
     monthly_head_matrix,
     monthly_trend,
     period_totals,
+    sales_purchase_period,
     sum_expenses,
     sum_payments,
     sum_receipts,
@@ -216,6 +219,107 @@ class DayByInstitutionReportView(APIView):
         )
 
 
+class BranchWindowView(APIView):
+    """Last N days of sales, purchase, and expense, summed across every branch in scope."""
+
+    permission_classes = [IsAdminOrChiefManager]
+
+    def get(self, request):
+        today = timezone.localdate()
+        end_raw = (request.query_params.get("end") or today.isoformat()).strip()
+        start_raw = (request.query_params.get("start") or "").strip()
+        try:
+            end = date_type.fromisoformat(end_raw)
+            start = date_type.fromisoformat(start_raw) if start_raw else date_type(end.year, end.month, 1)
+        except ValueError:
+            return Response({"detail": "Invalid start or end date."}, status=400)
+        if start.year != end.year or start.month != end.month:
+            start = date_type(end.year, end.month, 1)
+        if start > end:
+            start = end
+        main_institution_id = (
+            request.user.main_institution_id if getattr(request.user, "is_chief_manager_role", False) else None
+        )
+        window = combined_daily_window(start, end, main_institution_id)
+        return Response(
+            {
+                "start": window["start"].isoformat(),
+                "end": window["end"].isoformat(),
+                "today": today.isoformat(),
+                "days": [
+                    {
+                        "date": row["date"].isoformat(),
+                        "label": row["date"].strftime("%d %b"),
+                        "receipt": float(row["receipt"]),
+                        "payment": float(row["payment"]),
+                        "expense": float(row["expense"]),
+                        "business": float(row["business"]),
+                    }
+                    for row in window["rows"]
+                ],
+            }
+        )
+
+
+class PeriodicSalesPurchaseView(APIView):
+    permission_classes = [IsAdminOrManager]
+
+    def get(self, request):
+        if not (request.query_params.get("from_date") or "").strip() or not (request.query_params.get("to_date") or "").strip():
+            return Response({"detail": "From date and to date are required."}, status=400)
+        try:
+            start = date_type.fromisoformat(request.query_params.get("from_date").strip())
+            end = date_type.fromisoformat(request.query_params.get("to_date").strip())
+        except ValueError:
+            return Response({"detail": "From date and to date must be YYYY-MM-DD."}, status=400)
+        if start > end:
+            return Response({"detail": "From date must be on or before to date."}, status=400)
+        institution_id = scoped_institution_id(request)
+        main_institution_id = scoped_main_institution_id(request, institution_id)
+        report = sales_purchase_period(institution_id, start, end, main_institution_id)
+        institution_name = "ALL"
+        if institution_id is not None:
+            institution_name = Institution.objects.get(pk=institution_id).name
+        return Response(
+            {
+                "institution_id": institution_id,
+                "institution_name": institution_name,
+                "year": start.year,
+                "month": start.month,
+                "from_date": start.isoformat(),
+                "to_date": end.isoformat(),
+                "receipt_heads": [
+                    {"id": head.id, "code": head.code, "description": head.description}
+                    for head in report["receipt_heads"]
+                ],
+                "payment_heads": [
+                    {"id": head.id, "code": head.code, "description": head.description}
+                    for head in report["payment_heads"]
+                ],
+                "rows": [
+                    {
+                        "date": row["date"].isoformat(),
+                        "receipts": {key: str(value) for key, value in row["receipts"].items()},
+                        "payments": {key: str(value) for key, value in row["payments"].items()},
+                        "receipt": str(row["receipt"]),
+                        "payment": str(row["payment"]),
+                        "business": str(row["business"]),
+                    }
+                    for row in report["rows"]
+                ],
+                "receipt_head_totals": {
+                    str(head_id): str(amount) for head_id, amount in report["receipt_head_totals"].items()
+                },
+                "payment_head_totals": {
+                    str(head_id): str(amount) for head_id, amount in report["payment_head_totals"].items()
+                },
+                "total_receipt": str(report["total_receipt"]),
+                "total_payment": str(report["total_payment"]),
+                "total_business": str(report["total_business"]),
+            }
+        )
+
+
 class DashboardView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -226,12 +330,17 @@ class DashboardView(APIView):
         main_institution_id = scoped_main_institution_id(request, institution_id)
         year = int(request.query_params.get("year") or today.year)
         month = int(request.query_params.get("month") or today.month)
+        week_start = today - timedelta(days=today.weekday())
         today_receipt = sum_receipts(institution_id, today, today, main_institution_id)
         today_payment = sum_payments(institution_id, today, today, main_institution_id)
         today_expense = sum_expenses(institution_id, today, today, main_institution_id)
+        week_receipt = sum_receipts(institution_id, week_start, today, main_institution_id)
+        week_payment = sum_payments(institution_id, week_start, today, main_institution_id)
+        week_expense = sum_expenses(institution_id, week_start, today, main_institution_id)
         month_totals = period_totals(institution_id, year, month, main_institution_id)
         rows, _ = daily_breakdown(institution_id, year, month, main_institution_id)
-        trend = monthly_trend(institution_id, today, months=12, main_institution_id=main_institution_id)
+        period_end = date_type(year, month, monthrange(year, month)[1])
+        trend = monthly_trend(institution_id, period_end, months=12, main_institution_id=main_institution_id)
 
         scope_name = user.institution.name
         if institution_id is None and (user.is_admin_role or user.is_chief_manager_role):
@@ -252,6 +361,13 @@ class DashboardView(APIView):
                 "expense": str(today_expense),
                 "business": str(calculate_total_business(today_receipt, today_payment)),
                 "balance": str(calculate_balance(today_receipt, today_payment, today_expense)),
+            },
+            "week": {
+                "receipt": str(week_receipt),
+                "payment": str(week_payment),
+                "expense": str(week_expense),
+                "business": str(calculate_total_business(week_receipt, week_payment)),
+                "balance": str(calculate_balance(week_receipt, week_payment, week_expense)),
             },
             "month": {
                 "receipt": str(month_totals["total_receipt"]),
